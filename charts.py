@@ -1,6 +1,10 @@
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import calendar
 
 def equity_curve(df, period_name="All Time"):
     fig = px.line(df, y="equity", title=f"Equity Curve - {period_name}", template="plotly_dark")
@@ -69,57 +73,200 @@ def pnl_growth_over_time(df, pnl, period_name="All Time"):
     return fig
 
 def rolling_performance_charts(df):
-    """Create rolling performance charts to detect edge decay"""
+    """
+    Create professional-grade rolling performance charts for edge decay detection
+    Based on risk management principles, not Twitter trader fluff
+    """
     
-    # Create subplots
+    # Create comprehensive subplots
     fig = make_subplots(
-        rows=3, cols=1,
-        subplot_titles=('Rolling Expectancy (20-trade)', 'Rolling Win Rate (%)', 'Rolling Profit (20-trade)'),
-        vertical_spacing=0.08
+        rows=4, cols=2,
+        subplot_titles=(
+            'Rolling Expectancy (20-trade) - THE ONLY METRIC THAT MATTERS',
+            'Rolling R:R Ratio - Win Rate Means Nothing Without This',
+            'Rolling Win Rate (%) - Worship This & You\'ll Blow Up', 
+            'Rolling Profit Factor - Gross Profit / Gross Loss',
+            'Rolling Profit (20-trade) - Path Dependent, Not Edge',
+            'Rolling Drawdown % - Pain Within Window',
+            'Edge Decay Signals - Expectancy Trend & WR/Exp Divergence',
+            'Profit Concentration Risk - Are 20% of Trades Carrying You?'
+        ),
+        vertical_spacing=0.06,
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"secondary_y": False}]]
     )
     
-    # Rolling Expectancy
+    trade_numbers = list(range(1, len(df) + 1))
+    
+    # === ROW 1: EXPECTANCY & R:R RATIO ===
+    
+    # Rolling Expectancy (MOST IMPORTANT)
     fig.add_trace(go.Scatter(
-        x=list(range(1, len(df) + 1)),
+        x=trade_numbers,
         y=df["rolling_expectancy"],
         mode='lines',
         name='Rolling Expectancy',
-        line=dict(color='#ff6b6b', width=2)
+        line=dict(color='#ff6b6b', width=3),
+        hovertemplate='Trade %{x}<br>Expectancy: $%{y:.2f}<extra></extra>'
     ), row=1, col=1)
     
-    # Add zero line for expectancy
-    fig.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5, row=1, col=1)
+    # Add zero line for expectancy (CRITICAL)
+    fig.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.7, row=1, col=1,
+                  annotation_text="EDGE THRESHOLD", annotation_position="top right")
     
-    # Rolling Win Rate
+    # Rolling R:R Ratio
     fig.add_trace(go.Scatter(
-        x=list(range(1, len(df) + 1)),
+        x=trade_numbers,
+        y=df["rolling_rr_ratio"],
+        mode='lines',
+        name='Rolling R:R',
+        line=dict(color='#4ecdc4', width=2),
+        hovertemplate='Trade %{x}<br>R:R Ratio: %{y:.2f}:1<extra></extra>'
+    ), row=1, col=2)
+    
+    # Add 1:1 reference line
+    fig.add_hline(y=1.0, line_dash="dash", line_color="orange", opacity=0.7, row=1, col=2,
+                  annotation_text="1:1 RATIO", annotation_position="top right")
+    
+    # === ROW 2: WIN RATE & PROFIT FACTOR ===
+    
+    # Rolling Win Rate (with warning context)
+    fig.add_trace(go.Scatter(
+        x=trade_numbers,
         y=df["rolling_win_rate"],
         mode='lines',
         name='Rolling Win Rate',
-        line=dict(color='#4ecdc4', width=2)
+        line=dict(color='#45b7d1', width=2),
+        hovertemplate='Trade %{x}<br>Win Rate: %{y:.1f}%<extra></extra>'
     ), row=2, col=1)
+    
+    # Add 50% reference line
+    fig.add_hline(y=50, line_dash="dash", line_color="gray", opacity=0.5, row=2, col=1,
+                  annotation_text="50%", annotation_position="top right")
+    
+    # Rolling Profit Factor
+    fig.add_trace(go.Scatter(
+        x=trade_numbers,
+        y=df["rolling_profit_factor"],
+        mode='lines',
+        name='Rolling PF',
+        line=dict(color='#96ceb4', width=2),
+        hovertemplate='Trade %{x}<br>Profit Factor: %{y:.2f}<extra></extra>'
+    ), row=2, col=2)
+    
+    # Add 1.0 reference line (break-even)
+    fig.add_hline(y=1.0, line_dash="dash", line_color="red", opacity=0.7, row=2, col=2,
+                  annotation_text="BREAK-EVEN", annotation_position="top right")
+    
+    # === ROW 3: PROFIT & DRAWDOWN ===
     
     # Rolling Profit
     fig.add_trace(go.Scatter(
-        x=list(range(1, len(df) + 1)),
+        x=trade_numbers,
         y=df["rolling_profit"],
         mode='lines',
         name='Rolling Profit',
-        line=dict(color='#45b7d1', width=2)
+        line=dict(color='#feca57', width=2),
+        hovertemplate='Trade %{x}<br>20-Trade Profit: $%{y:.2f}<extra></extra>'
     ), row=3, col=1)
     
-    # Add zero line for profit
+    # Add zero line
     fig.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5, row=3, col=1)
     
+    # Rolling Drawdown %
+    fig.add_trace(go.Scatter(
+        x=trade_numbers,
+        y=df["rolling_drawdown_pct"],
+        mode='lines',
+        name='Rolling DD %',
+        line=dict(color='#ff7675', width=2),
+        fill='tonexty',
+        fillcolor='rgba(255, 118, 117, 0.1)',
+        hovertemplate='Trade %{x}<br>Rolling DD: %{y:.1f}%<extra></extra>'
+    ), row=3, col=2)
+    
+    # === ROW 4: EDGE DECAY SIGNALS ===
+    
+    # Expectancy Trend & WR/Exp Divergence
+    fig.add_trace(go.Scatter(
+        x=trade_numbers,
+        y=df["expectancy_trend"],
+        mode='lines',
+        name='Expectancy Trend',
+        line=dict(color='#fd79a8', width=2),
+        hovertemplate='Trade %{x}<br>Expectancy Trend: $%{y:.3f}<extra></extra>'
+    ), row=4, col=1)
+    
+    # Add zero line for trend
+    fig.add_hline(y=0, line_dash="dash", line_color="white", opacity=0.5, row=4, col=1)
+    
+    # Profit Concentration Risk
+    fig.add_trace(go.Scatter(
+        x=trade_numbers,
+        y=df["rolling_profit_concentration"],
+        mode='lines',
+        name='Profit Concentration',
+        line=dict(color='#a29bfe', width=2),
+        hovertemplate='Trade %{x}<br>Top 20% Contribution: %{y:.1f}%<extra></extra>'
+    ), row=4, col=2)
+    
+    # Add danger zone (>80% concentration is risky)
+    fig.add_hline(y=80, line_dash="dash", line_color="red", opacity=0.7, row=4, col=2,
+                  annotation_text="DANGER ZONE", annotation_position="top right")
+    
+    # === PROFESSIONAL LAYOUT ===
     fig.update_layout(
-        height=600,
+        height=1000,
         template="plotly_dark",
         showlegend=False,
-        title_text="Rolling Performance Analysis (Edge Decay Detection)"
+        title=dict(
+            text="<b>Professional Edge Decay Analysis</b><br><span style='font-size:14px;'>Risk Manager's View - No Twitter Trader Fluff</span>",
+            x=0.5,
+            font=dict(size=20)
+        ),
+        margin=dict(l=60, r=60, t=100, b=140),  # Even larger bottom margin for two rows of annotations
+        annotations=[
+            # Professional warnings positioned in two rows to avoid overlap
+            dict(
+                text="⚠️ CRITICAL: If expectancy trends down for 2-3 windows → CUT SIZE",
+                xref="paper", yref="paper",
+                x=0.5, y=-0.08,  # First row, centered
+                showarrow=False,
+                font=dict(color="red", size=11),
+                bgcolor="rgba(255,0,0,0.1)",
+                bordercolor="red",
+                borderwidth=1,
+                xanchor="center"
+            ),
+            dict(
+                text="📊 PRO TIP: Rising win rate + falling expectancy = STRATEGY DEATH",
+                xref="paper", yref="paper", 
+                x=0.5, y=-0.15,  # Second row, centered, further down
+                showarrow=False,
+                font=dict(color="orange", size=11),
+                bgcolor="rgba(255,165,0,0.1)",
+                bordercolor="orange",
+                borderwidth=1,
+                xanchor="center"
+            )
+        ]
     )
     
+    # Update y-axis labels for each subplot
+    fig.update_yaxes(title_text="Expectancy ($)", row=1, col=1)
+    fig.update_yaxes(title_text="R:R Ratio", row=1, col=2)
+    fig.update_yaxes(title_text="Win Rate (%)", row=2, col=1)
+    fig.update_yaxes(title_text="Profit Factor", row=2, col=2)
+    fig.update_yaxes(title_text="Rolling Profit ($)", row=3, col=1)
+    fig.update_yaxes(title_text="Drawdown (%)", row=3, col=2)
+    fig.update_yaxes(title_text="Trend ($)", row=4, col=1)
+    fig.update_yaxes(title_text="Concentration (%)", row=4, col=2)
+    
     # Update x-axis labels
-    fig.update_xaxes(title_text="Trade Number", row=3, col=1)
+    fig.update_xaxes(title_text="Trade Number", row=4, col=1)
+    fig.update_xaxes(title_text="Trade Number", row=4, col=2)
     
     return fig
 
@@ -554,3 +701,313 @@ def create_pip_analysis_chart(insights):
     )
     
     return pip_fig
+
+def create_daily_calendar_chart(df, pnl_col, period_name="All Time", selected_year=None, selected_month=None):
+    """
+    Create a professional calendar-style chart showing daily trading performance
+    Similar to the reference image with monthly view, year navigation, and clean layout
+    """
+    
+    # Find datetime column
+    datetime_col = None
+    for col in df.columns:
+        if any(word in col.lower() for word in ['time', 'date', 'datetime', 'close_time']):
+            try:
+                df[f'{col}_parsed'] = pd.to_datetime(df[col])
+                datetime_col = f'{col}_parsed'
+                break
+            except:
+                continue
+    
+    if datetime_col is None:
+        # Return empty figure with message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No valid datetime column found for calendar view",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False,
+            font=dict(size=16, color="gray")
+        )
+        fig.update_layout(
+            template="plotly_white",
+            title="Daily Trading Calendar",
+            height=600,
+            paper_bgcolor='white'
+        )
+        return fig
+    
+    # Group by date
+    df_copy = df.copy()
+    df_copy['trade_date'] = df_copy[datetime_col].dt.date
+    
+    # Aggregate daily data
+    daily_data = df_copy.groupby('trade_date').agg({
+        pnl_col: ['count', 'sum']
+    }).reset_index()
+    
+    # Flatten column names
+    daily_data.columns = ['date', 'trade_count', 'daily_pnl']
+    
+    if len(daily_data) == 0:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No trading data available for calendar view",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False,
+            font=dict(size=16, color="gray")
+        )
+        fig.update_layout(
+            template="plotly_white",
+            title="Daily Trading Calendar",
+            height=600,
+            paper_bgcolor='white'
+        )
+        return fig
+    
+    # Determine target year and month
+    if selected_year and selected_month:
+        target_year = selected_year
+        target_month = selected_month
+    else:
+        # Use the most recent month with data
+        latest_date = daily_data['date'].max()
+        target_year = latest_date.year
+        target_month = latest_date.month
+    
+    # Create month view
+    first_day_of_month = datetime(target_year, target_month, 1).date()
+    
+    # Get last day of month
+    if target_month == 12:
+        last_day_of_month = datetime(target_year + 1, 1, 1).date() - timedelta(days=1)
+    else:
+        last_day_of_month = datetime(target_year, target_month + 1, 1).date() - timedelta(days=1)
+    
+    # Generate all dates in the month
+    month_dates = pd.date_range(start=first_day_of_month, end=last_day_of_month, freq='D')
+    
+    # Create complete month dataset
+    month_data = pd.DataFrame({'date': month_dates.date})
+    month_data = month_data.merge(daily_data, on='date', how='left')
+    month_data['trade_count'] = month_data['trade_count'].fillna(0)
+    month_data['daily_pnl'] = month_data['daily_pnl'].fillna(0)
+    
+    # Add calendar information
+    month_data['day'] = pd.to_datetime(month_data['date']).dt.day
+    month_data['weekday'] = pd.to_datetime(month_data['date']).dt.weekday  # Monday = 0
+    month_data['weekday_name'] = pd.to_datetime(month_data['date']).dt.day_name()
+    
+    # Create the calendar grid (7 columns for days of week, multiple rows for weeks)
+    fig = go.Figure()
+    
+    # Calendar dimensions - SIGNIFICANTLY INCREASED for no text overlap
+    cell_width = 2.0   # Increased from 1.4 to 2.0
+    cell_height = 1.8  # Increased from 1.2 to 1.8
+    margin = 0.1       # Increased margin for better separation
+    
+    # Get first day of month weekday (0=Monday, 6=Sunday)
+    first_weekday = datetime(target_year, target_month, 1).weekday()
+    # Convert to Sunday=0 format for calendar display
+    first_weekday = (first_weekday + 1) % 7
+    
+    # Calculate max P&L for color scaling
+    max_pnl = max(abs(month_data['daily_pnl'].min()), abs(month_data['daily_pnl'].max()))
+    if max_pnl == 0:
+        max_pnl = 100  # Default scale
+    
+    # Create calendar grid
+    for idx, row in month_data.iterrows():
+        day = row['day']
+        trades = int(row['trade_count'])
+        pnl = row['daily_pnl']
+        
+        # Calculate position in grid
+        days_from_start = day - 1
+        total_days_from_start = first_weekday + days_from_start
+        
+        week_row = total_days_from_start // 7
+        day_col = total_days_from_start % 7
+        
+        # Calculate actual positions (flip y-axis so week 0 is at top)
+        x_pos = day_col * (cell_width + margin)
+        y_pos = -(week_row * (cell_height + margin))  # Negative for top-to-bottom
+        
+        # Determine cell color based on P&L (matching reference image style)
+        if trades == 0:
+            cell_color = '#f8f9fa'  # Light gray for no trades
+            border_color = '#e9ecef'
+            text_color = '#6c757d'
+        elif pnl > 0:
+            # Green shades for profit (more vibrant like reference)
+            intensity = min(abs(pnl) / max_pnl, 1.0) if max_pnl > 0 else 0.3
+            # Use a more vibrant green similar to reference
+            green_base = 76  # Base green value
+            green_intensity = int(green_base + intensity * 100)  # 76-176 range
+            cell_color = f'rgb(40, {green_intensity}, 40)'
+            border_color = '#28a745'
+            text_color = 'white'
+        elif pnl < 0:
+            # Red shades for loss (more vibrant like reference)
+            intensity = min(abs(pnl) / max_pnl, 1.0) if max_pnl > 0 else 0.3
+            # Use a more vibrant red similar to reference
+            red_base = 76
+            red_intensity = int(red_base + intensity * 100)  # 76-176 range
+            cell_color = f'rgb({red_intensity}, 40, 40)'
+            border_color = '#dc3545'
+            text_color = 'white'
+        else:
+            # Neutral gray for breakeven with trades
+            cell_color = '#e9ecef'
+            border_color = '#adb5bd'
+            text_color = '#495057'
+        
+        # Add cell rectangle
+        fig.add_shape(
+            type="rect",
+            x0=x_pos, y0=y_pos,
+            x1=x_pos + cell_width, y1=y_pos + cell_height,
+            fillcolor=cell_color,
+            line=dict(color=border_color, width=1),
+        )
+        
+        # Add day number (tiny superscript style in top-left corner)
+        fig.add_annotation(
+            x=x_pos + 0.08, y=y_pos + 1.75,  # Very top-left corner
+            text=str(day),
+            showarrow=False,
+            font=dict(color=text_color, size=10, family="Arial"),  # Much smaller, like true superscript
+            xanchor="left", yanchor="top"
+        )
+        
+        # Add P&L amount (center, more prominent now)
+        if pnl != 0:
+            pnl_text = f"${pnl:.2f}" if abs(pnl) < 100 else f"${pnl:.0f}"
+            fig.add_annotation(
+                x=x_pos + 1.0, y=y_pos + 1.1,  # Slightly higher center
+                text=pnl_text,
+                showarrow=False,
+                font=dict(color=text_color, size=18, family="Arial Bold"),  # Larger, more prominent
+                xanchor="center", yanchor="middle"
+            )
+        else:
+            if trades > 0:
+                fig.add_annotation(
+                    x=x_pos + 1.0, y=y_pos + 1.1,  # Slightly higher center
+                    text="$0.00",
+                    showarrow=False,
+                    font=dict(color=text_color, size=16),
+                    xanchor="center", yanchor="middle"
+                )
+        
+        # Add trade count (bottom center, more space now)
+        if trades > 0:
+            trade_text = f"{trades} trade{'s' if trades != 1 else ''}"
+            fig.add_annotation(
+                x=x_pos + 1.0, y=y_pos + 0.4,  # Bottom with more space
+                text=trade_text,
+                showarrow=False,
+                font=dict(color=text_color, size=13),  # Slightly larger
+                xanchor="center", yanchor="bottom"
+            )
+        else:
+            fig.add_annotation(
+                x=x_pos + 1.0, y=y_pos + 0.4,  # Bottom center
+                text="0 trades",
+                showarrow=False,
+                font=dict(color=text_color, size=12),
+                xanchor="center", yanchor="bottom"
+            )
+        
+        # Add invisible hover area
+        hover_text = (
+            f"<b>{row['weekday_name']}, {calendar.month_name[target_month]} {day}, {target_year}</b><br>"
+            f"Trades: {trades}<br>"
+            f"P&L: ${pnl:.2f}<br>"
+            f"Status: {'Profitable' if pnl > 0 else 'Loss' if pnl < 0 else 'Breakeven' if trades > 0 else 'No Trading'}"
+        )
+        
+        fig.add_trace(go.Scatter(
+            x=[x_pos + 1.0], y=[y_pos + 0.9],  # Adjusted for larger cells
+            mode='markers',
+            marker=dict(size=80, color='rgba(0,0,0,0)'),  # Larger invisible area
+            hovertemplate=hover_text + "<extra></extra>",
+            showlegend=False,
+            name=""
+        ))
+    
+    # Add weekday headers (matching reference style)
+    weekday_labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    for i, day_name in enumerate(weekday_labels):
+        fig.add_annotation(
+            x=i * (cell_width + margin) + 1.0, y=1.6,  # Adjusted for much larger cells
+            text=day_name,
+            showarrow=False,
+            font=dict(color="#495057", size=18, family="Arial Bold"),  # Larger font
+            xanchor="center", yanchor="bottom"
+        )
+    
+    # Calculate layout dimensions
+    max_weeks = 6  # Maximum weeks in a month view
+    total_width = 7 * (cell_width + margin) - margin
+    total_height = max_weeks * (cell_height + margin) + 2
+    
+    # Update layout (clean white background like reference)
+    fig.update_layout(
+        title=dict(
+            text=f"<b>{calendar.month_name[target_month]} {target_year}</b><br><span style='font-size:14px; color:#6c757d;'>See at one glance which how many days you are making or losing money. Click a day to look at the trades.</span>",
+            x=0.5,
+            font=dict(size=24, color="#212529")
+        ),
+        template="plotly_white",
+        height=900,   # Increased height for much larger cells
+        width=1400,   # Increased width for much larger cells
+        xaxis=dict(
+            range=[-0.3, total_width + 0.3],  # More padding
+            showgrid=False,
+            showticklabels=False,
+            zeroline=False,
+            fixedrange=True
+        ),
+        yaxis=dict(
+            range=[-total_height, 2.0],  # Adjusted for much larger cells
+            showgrid=False,
+            showticklabels=False,
+            zeroline=False,
+            fixedrange=True,
+            scaleanchor="x",
+            scaleratio=1
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(l=50, r=50, t=120, b=80),
+        hovermode='closest'
+    )
+    
+    # Add summary statistics at the bottom
+    total_trades = int(month_data['trade_count'].sum())
+    total_pnl = month_data['daily_pnl'].sum()
+    profitable_days = (month_data['daily_pnl'] > 0).sum()
+    trading_days = (month_data['trade_count'] > 0).sum()
+    loss_days = (month_data['daily_pnl'] < 0).sum()
+    
+    # Create summary similar to reference image
+    summary_text = (
+        f"<b>Month Summary:</b> {total_trades} total trades • "
+        f"${total_pnl:.2f} total P&L • "
+        f"{profitable_days} profitable days • "
+        f"{loss_days} loss days • "
+        f"{trading_days - profitable_days - loss_days} breakeven days"
+    )
+    
+    fig.add_annotation(
+        x=0.5, y=-0.08,
+        text=summary_text,
+        showarrow=False,
+        font=dict(color="#6c757d", size=12),
+        xref="paper", yref="paper",
+        xanchor="center", yanchor="top"
+    )
+    
+    return fig

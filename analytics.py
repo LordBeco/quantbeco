@@ -1,3 +1,6 @@
+import pandas as pd
+import numpy as np
+
 def compute_metrics(df, pnl):
     wins = df[df[pnl] > 0]
     losses = df[df[pnl] < 0]
@@ -19,10 +22,14 @@ def compute_metrics(df, pnl):
     }
 
 def compute_rolling_metrics(df, pnl, window=20):
-    """Compute rolling performance metrics to detect edge decay"""
+    """
+    Compute comprehensive rolling performance metrics for edge decay detection
+    Based on professional risk management principles
+    """
     df = df.copy()
     
-    # Rolling expectancy (20-trade window)
+    # === BASIC ROLLING METRICS ===
+    # Rolling expectancy (20-trade window) - THE MOST IMPORTANT METRIC
     df["rolling_expectancy"] = df[pnl].rolling(window, min_periods=1).mean()
     
     # Rolling win rate
@@ -31,6 +38,101 @@ def compute_rolling_metrics(df, pnl, window=20):
     
     # Rolling profit (cumulative over window)
     df["rolling_profit"] = df[pnl].rolling(window, min_periods=1).sum()
+    
+    # === ADVANCED ROLLING METRICS (PROFESSIONAL LEVEL) ===
+    
+    # Rolling Risk-Reward Ratio (R:R)
+    def rolling_rr_ratio(series, window):
+        def calc_rr(window_data):
+            wins = window_data[window_data > 0]
+            losses = window_data[window_data < 0]
+            if len(wins) == 0 or len(losses) == 0:
+                return 0
+            avg_win = wins.mean()
+            avg_loss = abs(losses.mean())
+            return avg_win / avg_loss if avg_loss > 0 else 0
+        return series.rolling(window, min_periods=1).apply(calc_rr, raw=True)
+    
+    df["rolling_rr_ratio"] = rolling_rr_ratio(df[pnl], window)
+    
+    # Rolling Maximum Adverse Excursion (MAE) - How deep do losses go?
+    # Note: This would need intraday data, so we'll use trade-level approximation
+    df["rolling_max_loss"] = df[pnl].rolling(window, min_periods=1).min()
+    df["rolling_avg_loss"] = df[pnl].where(df[pnl] < 0).rolling(window, min_periods=1).mean()
+    
+    # Rolling Maximum Favorable Excursion (MFE) - How high do wins go?
+    df["rolling_max_win"] = df[pnl].rolling(window, min_periods=1).max()
+    df["rolling_avg_win"] = df[pnl].where(df[pnl] > 0).rolling(window, min_periods=1).mean()
+    
+    # Rolling Profit Factor
+    def rolling_profit_factor(series, window):
+        def calc_pf(window_data):
+            wins = window_data[window_data > 0].sum()
+            losses = abs(window_data[window_data < 0].sum())
+            return wins / losses if losses > 0 else 0
+        return series.rolling(window, min_periods=1).apply(calc_pf, raw=True)
+    
+    df["rolling_profit_factor"] = rolling_profit_factor(df[pnl], window)
+    
+    # Rolling Drawdown (from peak within window)
+    def rolling_drawdown(series, window):
+        def calc_dd(window_data):
+            cumsum = window_data.cumsum()
+            peak = cumsum.cummax()
+            dd = ((cumsum - peak) / peak * 100).min()
+            return dd if not pd.isna(dd) else 0
+        return series.rolling(window, min_periods=1).apply(calc_dd, raw=False)
+    
+    df["rolling_drawdown_pct"] = rolling_drawdown(df[pnl], window)
+    
+    # Rolling Volatility (standard deviation of returns)
+    df["rolling_volatility"] = df[pnl].rolling(window, min_periods=1).std()
+    
+    # Rolling Sharpe-like Ratio (expectancy / volatility)
+    df["rolling_sharpe"] = df["rolling_expectancy"] / df["rolling_volatility"].replace(0, 1)
+    
+    # === EDGE DECAY DETECTION SIGNALS ===
+    
+    # Expectancy trend (is edge deteriorating?)
+    df["expectancy_trend"] = df["rolling_expectancy"].diff(5)  # 5-trade trend
+    
+    # Win rate vs expectancy divergence (dangerous when win rate high but expectancy falling)
+    df["wr_exp_divergence"] = df["rolling_win_rate"] - (df["rolling_expectancy"] * 100)
+    
+    # Profit concentration risk (is recent profit from few big wins?)
+    def rolling_profit_concentration(series, window):
+        def calc_concentration(window_data):
+            if len(window_data) == 0:
+                return 0
+            # What % of total profit comes from top 20% of trades?
+            sorted_trades = window_data.sort_values(ascending=False)
+            top_20_pct = int(len(sorted_trades) * 0.2) or 1
+            top_trades_profit = sorted_trades.head(top_20_pct).sum()
+            total_profit = window_data.sum()
+            return (top_trades_profit / total_profit * 100) if total_profit > 0 else 0
+        return series.rolling(window, min_periods=1).apply(calc_concentration, raw=False)
+    
+    df["rolling_profit_concentration"] = rolling_profit_concentration(df[pnl], window)
+    
+    # === REGIME DETECTION (TIME-BASED) ===
+    if 'close_time_parsed' in df.columns or any('time' in col.lower() for col in df.columns):
+        # Find datetime column
+        datetime_col = None
+        for col in df.columns:
+            if 'time' in col.lower() and 'parsed' in col:
+                datetime_col = col
+                break
+        
+        if datetime_col:
+            df['hour'] = pd.to_datetime(df[datetime_col]).dt.hour
+            df['day_of_week'] = pd.to_datetime(df[datetime_col]).dt.day_name()
+            
+            # Rolling performance by session
+            df['session'] = df['hour'].apply(lambda x: 
+                'Asian' if 0 <= x < 8 else
+                'London' if 8 <= x < 16 else
+                'NY' if 16 <= x < 24 else 'Other'
+            )
     
     return df
 
@@ -56,6 +158,103 @@ def compute_period_starting_balance(original_df, filtered_df, pnl_col, original_
     period_starting_balance = original_starting_balance + cumulative_pnl_before
     
     return period_starting_balance
+def analyze_edge_decay(df, pnl, window=20):
+    """
+    Professional edge decay analysis with risk manager's interpretation
+    No fluff, just survival and scaling insights
+    """
+    
+    analysis = {
+        'edge_status': 'UNKNOWN',
+        'warnings': [],
+        'signals': [],
+        'recommendations': [],
+        'regime_analysis': {},
+        'risk_metrics': {}
+    }
+    
+    if len(df) < window:
+        analysis['edge_status'] = 'INSUFFICIENT_DATA'
+        analysis['warnings'].append(f"Need at least {window} trades for meaningful analysis")
+        return analysis
+    
+    # Get latest metrics (last 20 trades)
+    latest_expectancy = df["rolling_expectancy"].iloc[-1]
+    latest_win_rate = df["rolling_win_rate"].iloc[-1]
+    latest_rr_ratio = df["rolling_rr_ratio"].iloc[-1] if "rolling_rr_ratio" in df.columns else 0
+    latest_profit_factor = df["rolling_profit_factor"].iloc[-1] if "rolling_profit_factor" in df.columns else 0
+    latest_concentration = df["rolling_profit_concentration"].iloc[-1] if "rolling_profit_concentration" in df.columns else 0
+    
+    # Expectancy trend analysis
+    expectancy_trend = df["expectancy_trend"].iloc[-5:].mean() if "expectancy_trend" in df.columns else 0
+    
+    # === EDGE STATUS DETERMINATION ===
+    if latest_expectancy <= 0:
+        analysis['edge_status'] = 'NO_EDGE'
+        analysis['warnings'].append("🚨 CRITICAL: No statistical edge - expectancy ≤ 0")
+        analysis['recommendations'].append("STOP TRADING immediately - strategy has no edge")
+    elif latest_expectancy > 0 and expectancy_trend < -0.1:
+        analysis['edge_status'] = 'EDGE_DECAY'
+        analysis['warnings'].append("⚠️ WARNING: Edge is deteriorating - expectancy trending down")
+        analysis['recommendations'].append("REDUCE POSITION SIZE by 50% - edge decay detected")
+    elif latest_expectancy > 0 and expectancy_trend > 0.1:
+        analysis['edge_status'] = 'EDGE_IMPROVING'
+        analysis['signals'].append("✅ POSITIVE: Edge is strengthening - expectancy trending up")
+    else:
+        analysis['edge_status'] = 'EDGE_STABLE'
+        analysis['signals'].append("📊 NEUTRAL: Edge appears stable")
+    
+    # === WIN RATE VS EXPECTANCY DIVERGENCE ===
+    if latest_win_rate > 70 and latest_expectancy < 10:
+        analysis['warnings'].append("🚨 DANGER: High win rate but low expectancy - winners shrinking or losers expanding")
+        analysis['recommendations'].append("This is how strategies die quietly - investigate trade sizing")
+    
+    # === RISK-REWARD ANALYSIS ===
+    if latest_rr_ratio < 1.0 and latest_win_rate < 60:
+        analysis['warnings'].append("⚠️ POOR R:R: Risk-reward ratio < 1:1 with low win rate")
+        analysis['recommendations'].append("Need either higher win rate (>60%) or better R:R (>1:1)")
+    
+    # === PROFIT CONCENTRATION RISK ===
+    if latest_concentration > 80:
+        analysis['warnings'].append("🚨 FRAGILE: >80% of profit from top 20% of trades")
+        analysis['recommendations'].append("Strategy is fragile - dependent on few big winners")
+    elif latest_concentration > 60:
+        analysis['warnings'].append("⚠️ CONCENTRATION: Moderate profit concentration risk")
+    
+    # === PROFIT FACTOR ANALYSIS ===
+    if latest_profit_factor < 1.3:
+        analysis['warnings'].append("⚠️ FRAGILE PF: Profit factor < 1.3 - few bad trades will erase gains")
+        analysis['recommendations'].append("Profit factor too low for sustainable trading")
+    
+    # === PROFESSIONAL DECISION RULES ===
+    analysis['decision_rules'] = {
+        'trade_only_when': f"Rolling expectancy > 0 for 2+ windows (Currently: ${latest_expectancy:.2f})",
+        'reduce_size_when': "Win rate ↑ but expectancy ↓ (divergence detected)" if latest_win_rate > 70 and expectancy_trend < 0 else "No size reduction needed",
+        'stop_trading_when': "Rolling profit drops 30% from recent peak",
+        'regime_tagging': "Tag trades by session + volatility for deeper analysis"
+    }
+    
+    # === RISK METRICS SUMMARY ===
+    analysis['risk_metrics'] = {
+        'current_expectancy': f"${latest_expectancy:.2f}",
+        'expectancy_trend': f"${expectancy_trend:.3f} (5-trade avg)",
+        'win_rate': f"{latest_win_rate:.1f}%",
+        'rr_ratio': f"{latest_rr_ratio:.2f}:1",
+        'profit_factor': f"{latest_profit_factor:.2f}",
+        'profit_concentration': f"{latest_concentration:.1f}%"
+    }
+    
+    # === NEXT LEVEL ANALYSIS NEEDED ===
+    analysis['missing_analytics'] = [
+        "🔴 Rolling MAE/MFE - Are losses getting deeper? Wins cut early?",
+        "🔴 Drawdown Duration - How long does pain last? (Kills psychology)",
+        "🔴 Expectancy by Regime - London vs NY, High vol vs Low vol",
+        "🔴 Trade Contribution Histogram - Which 10% produce 80% of PnL?",
+        "🔴 Volatility Regime Detection - Edge changes with market conditions"
+    ]
+    
+    return analysis
+
 def compute_top_kpis(df, pnl, starting_balance_override=None):
     """Compute top-level KPIs: Equity, Balance, Total PnL"""
     

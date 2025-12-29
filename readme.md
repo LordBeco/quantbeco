@@ -24,6 +24,7 @@ A comprehensive TradingView-grade trading analytics dashboard built with Streaml
 - **Time-Based Analysis** - Hour/day/month performance patterns
 
 ### ⏰ **Time Analysis**
+- **Daily Trading Calendar** - Visual calendar with color-coded daily P&L
 - **Session Killer Detection** - Identify losing time periods
 - **Monthly Seasonality** - Performance heatmaps
 - **Hourly Performance** - Optimal trading hours

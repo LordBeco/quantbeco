@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
+import calendar
 from datetime import datetime, timedelta
-from analytics import compute_metrics, compute_rolling_metrics, compute_top_kpis, compute_time_analysis, compute_risk_pain_metrics, compute_trading_insights, generate_trading_insights_summary
+from analytics import compute_metrics, compute_rolling_metrics, compute_top_kpis, compute_time_analysis, compute_risk_pain_metrics, compute_trading_insights, generate_trading_insights_summary, analyze_edge_decay
 from charts import (equity_curve, drawdown_curve, pnl_distribution, win_loss_pie, 
                    pnl_growth_over_time, rolling_performance_charts, time_analysis_charts, 
-                   monthly_heatmap, risk_pain_charts, create_time_tables, create_trading_insights_charts, create_pip_analysis_chart)
+                   monthly_heatmap, risk_pain_charts, create_time_tables, create_trading_insights_charts, create_pip_analysis_chart, create_daily_calendar_chart)
 from diagnosis import diagnose, comprehensive_ai_diagnosis, generate_executive_summary
 from style import inject_css
 from tradelocker_api import TradeLockerAPI, test_tradelocker_connection, fetch_tradelocker_data, get_tradelocker_accounts
@@ -297,54 +298,6 @@ elif data_source == "🔗 TradeLocker API":
 
 # Continue with analysis only if we have data
 if df is not None and not df.empty:
-
-    # Clean numeric columns and calculate REAL PnL (including commissions and swaps)
-    numeric_cols = []
-    for col in ['profit', 'pnl', 'commission', 'swaps']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors="coerce").fillna(0)
-            numeric_cols.append(col)
-
-    # Calculate real PnL = Profit + Commission + Swaps
-    if 'profit' in df.columns:
-        pnl = 'real_pnl'
-        df['real_pnl'] = df['profit'].copy()
-        
-        if 'commission' in df.columns:
-            df['real_pnl'] += df['commission']
-        if 'swaps' in df.columns:
-            df['real_pnl'] += df['swaps']
-            
-        st.info(f"📊 **Real PnL Calculation**: Profit + Commission + Swaps")
-        
-        # Show breakdown
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Raw Profit", f"${df['profit'].sum():,.2f}")
-        with col2:
-            st.metric("Total Commission", f"${df['commission'].sum():,.2f}" if 'commission' in df.columns else "$0.00")
-        with col3:
-            st.metric("Total Swaps", f"${df['swaps'].sum():,.2f}" if 'swaps' in df.columns else "$0.00")
-        with col4:
-            st.metric("Real PnL", f"${df['real_pnl'].sum():,.2f}")
-            
-    else:
-        # Fallback to existing PnL column
-        pnl = next(c for c in df.columns if "pnl" in c or "profit" in c)
-        df[pnl] = pd.to_numeric(df[pnl].astype(str).str.replace(',', ''), errors="coerce").fillna(0)
-
-    # Clean balance data for starting balance detection
-    if not balance_df.empty:
-        for col in ['profit', 'pnl']:
-            if col in balance_df.columns:
-                balance_df[col] = pd.to_numeric(balance_df[col].astype(str).str.replace(',', ''), errors="coerce").fillna(0)
-
-    # Calculate KPIs - first detect starting balance, then calculate with real PnL
-    starting_balance = 10000  # Default
-    if not balance_df.empty:
-        balance_amount = balance_df['profit'].iloc[0] if 'profit' in balance_df.columns else balance_df[list(balance_df.columns)[0]].iloc[0]
-        if balance_amount > 0:
-            starting_balance = balance_amount
     
     # === DATE FILTERING SECTION ===
     st.markdown("---")
@@ -391,6 +344,9 @@ if df is not None and not df.empty:
     start_date, end_date = get_date_range(selected_period, custom_start, custom_end)
     
     # Show selected period info
+    # Store original dataframe before any filtering for calendar use
+    original_df = df.copy()
+    
     if start_date and end_date:
         if start_date == end_date:
             st.info(f"📊 **Analyzing**: {selected_period} ({start_date})")
@@ -398,7 +354,6 @@ if df is not None and not df.empty:
             st.info(f"📊 **Analyzing**: {selected_period} ({start_date} to {end_date})")
         
         # Filter the dataframe
-        original_df = df.copy()
         df = filter_dataframe_by_date(df, start_date, end_date)
         
         if len(df) == 0:
@@ -536,23 +491,260 @@ if df is not None and not df.empty:
     with col2:
         st.plotly_chart(pnl_growth_over_time(df, pnl, selected_period), use_container_width=True)
 
-    # === ROLLING PERFORMANCE (EDGE DECAY DETECTION) ===
-    st.markdown("### 🔍 Rolling Performance Analysis")
-    st.markdown("**Detects edge decay and performance degradation over time**")
+    # === ROLLING PERFORMANCE (PROFESSIONAL EDGE DECAY ANALYSIS) ===
+    st.markdown("### 🔍 Professional Edge Decay Analysis")
+    st.markdown("**Risk Manager's View - No Twitter Trader Fluff**")
+    
+    # Professional rolling performance charts
     st.plotly_chart(rolling_performance_charts(df), use_container_width=True)
     
-    # Edge decay warning
-    recent_expectancy = df["rolling_expectancy"].tail(10).mean()
-    if recent_expectancy <= 0:
-        st.error("⚠️ **EDGE DECAY DETECTED**: Recent rolling expectancy is negative. Consider stopping this strategy.")
-    elif recent_expectancy < df["rolling_expectancy"].head(20).mean() * 0.5:
-        st.warning("⚠️ **PERFORMANCE DECLINE**: Rolling expectancy has dropped significantly from early performance.")
+    # === PROFESSIONAL EDGE ANALYSIS ===
+    edge_analysis = analyze_edge_decay(df, pnl)
+    
+    # Edge Status Alert
+    if edge_analysis['edge_status'] == 'NO_EDGE':
+        st.error("🚨 **CRITICAL: NO STATISTICAL EDGE** - Strategy has no edge (expectancy ≤ 0)")
+    elif edge_analysis['edge_status'] == 'EDGE_DECAY':
+        st.error("⚠️ **WARNING: EDGE DECAY DETECTED** - Expectancy is deteriorating")
+    elif edge_analysis['edge_status'] == 'EDGE_IMPROVING':
+        st.success("✅ **POSITIVE: EDGE STRENGTHENING** - Expectancy is improving")
+    elif edge_analysis['edge_status'] == 'EDGE_STABLE':
+        st.info("📊 **NEUTRAL: EDGE STABLE** - Performance appears consistent")
+    
+    # Professional Analysis Breakdown
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🎯 Risk Manager's Assessment")
+        
+        # Warnings
+        if edge_analysis['warnings']:
+            st.markdown("**⚠️ WARNINGS:**")
+            for warning in edge_analysis['warnings']:
+                st.markdown(f"• {warning}")
+        
+        # Recommendations
+        if edge_analysis['recommendations']:
+            st.markdown("**📋 RECOMMENDATIONS:**")
+            for rec in edge_analysis['recommendations']:
+                st.markdown(f"• {rec}")
+        
+        # Positive signals
+        if edge_analysis['signals']:
+            st.markdown("**✅ POSITIVE SIGNALS:**")
+            for signal in edge_analysis['signals']:
+                st.markdown(f"• {signal}")
+    
+    with col2:
+        st.markdown("#### 📊 Current Risk Metrics")
+        
+        # Display risk metrics
+        risk_metrics = edge_analysis['risk_metrics']
+        
+        col2a, col2b = st.columns(2)
+        with col2a:
+            st.metric("Current Expectancy", risk_metrics.get('current_expectancy', 'N/A'))
+            st.metric("Win Rate", risk_metrics.get('win_rate', 'N/A'))
+            st.metric("R:R Ratio", risk_metrics.get('rr_ratio', 'N/A'))
+        
+        with col2b:
+            st.metric("Expectancy Trend", risk_metrics.get('expectancy_trend', 'N/A'))
+            st.metric("Profit Factor", risk_metrics.get('profit_factor', 'N/A'))
+            st.metric("Profit Concentration", risk_metrics.get('profit_concentration', 'N/A'))
+    
+    # Professional Decision Rules
+    st.markdown("#### 🎯 Professional Decision Rules")
+    decision_rules = edge_analysis['decision_rules']
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**📈 TRADE ONLY WHEN:**")
+        st.info(decision_rules.get('trade_only_when', 'N/A'))
+        
+        st.markdown("**📉 REDUCE SIZE WHEN:**")
+        st.warning(decision_rules.get('reduce_size_when', 'N/A'))
+    
+    with col2:
+        st.markdown("**🛑 STOP TRADING WHEN:**")
+        st.error(decision_rules.get('stop_trading_when', 'N/A'))
+        
+        st.markdown("**🏷️ REGIME TAGGING:**")
+        st.info(decision_rules.get('regime_tagging', 'N/A'))
+    
+    # Missing Analytics (Next Level)
+    with st.expander("🔴 Missing Analytics - Next Level Analysis Needed", expanded=False):
+        st.markdown("**To reach TradingView-grade analytics, you still need:**")
+        for missing in edge_analysis['missing_analytics']:
+            st.markdown(f"• {missing}")
+        
+        st.markdown("---")
+        st.markdown("**💡 Pro Tip:** These missing metrics separate professional traders from retail traders. Without them, you're trading half-blind.")
 
     st.markdown("---")
 
     # === TIME ANALYSIS (KILLER SESSIONS) ===
     st.markdown("### ⏰ Time Analysis - Session Killers")
     st.markdown("**Identify when you should NOT trade**")
+    
+    # Daily Trading Calendar
+    st.markdown("#### 📅 Daily Trading Calendar")
+    st.markdown("**See at one glance which how many days you are making or losing money. Click a day to look at the trades.**")
+    
+    # Calendar navigation controls
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+    
+    # Get available years and months from data
+    if len(df) > 0:
+        # Find datetime column for navigation
+        datetime_col = None
+        original_col = None
+        
+        for col in df.columns:
+            if any(word in col.lower() for word in ['time', 'date', 'datetime', 'close_time']):
+                try:
+                    # Test if we can parse this column
+                    test_series = pd.to_datetime(df[col])
+                    original_col = col
+                    datetime_col = f'{col}_parsed'
+                    break
+                except:
+                    continue
+        
+        if datetime_col and original_col:
+            # Create the parsed datetime column
+            df_temp = df.copy()
+            df_temp[datetime_col] = pd.to_datetime(df_temp[original_col])
+            df_temp['trade_date'] = df_temp[datetime_col].dt.date
+            available_dates = df_temp['trade_date'].dropna()
+            
+            if len(available_dates) > 0:
+                min_year = available_dates.min().year
+                max_year = available_dates.max().year
+                latest_date = available_dates.max()
+                
+                # Initialize calendar session state if not exists
+                if 'calendar_year' not in st.session_state:
+                    st.session_state.calendar_year = latest_date.year
+                if 'calendar_month' not in st.session_state:
+                    st.session_state.calendar_month = latest_date.month
+                
+                # Year selection (standalone - doesn't affect main app)
+                with col1:
+                    available_years = list(range(min_year, max_year + 1))
+                    default_year_idx = available_years.index(st.session_state.calendar_year) if st.session_state.calendar_year in available_years else 0
+                    selected_year = st.selectbox("📅 Year", available_years, index=default_year_idx, key="calendar_year_select")
+                    if selected_year != st.session_state.calendar_year:
+                        st.session_state.calendar_year = selected_year
+                
+                # Month selection (standalone - doesn't affect main app)
+                with col2:
+                    month_names = [calendar.month_name[i] for i in range(1, 13)]
+                    month_numbers = list(range(1, 13))
+                    default_month_idx = st.session_state.calendar_month - 1
+                    selected_month_name = st.selectbox("📅 Month", month_names, index=default_month_idx, key="calendar_month_select")
+                    selected_month = month_numbers[month_names.index(selected_month_name)]
+                    if selected_month != st.session_state.calendar_month:
+                        st.session_state.calendar_month = selected_month
+                
+                # Use session state values for consistency
+                selected_year = st.session_state.calendar_year
+                selected_month = st.session_state.calendar_month
+                
+                # Navigation buttons (standalone)
+                with col3:
+                    if st.button("⬅️ Previous Month", key="calendar_prev_month"):
+                        if selected_month == 1:
+                            new_month = 12
+                            new_year = selected_year - 1
+                        else:
+                            new_month = selected_month - 1
+                            new_year = selected_year
+                        
+                        if new_year >= min_year:
+                            st.session_state.calendar_year = new_year
+                            st.session_state.calendar_month = new_month
+                            st.rerun()
+                
+                with col4:
+                    if st.button("➡️ Next Month", key="calendar_next_month"):
+                        if selected_month == 12:
+                            new_month = 1
+                            new_year = selected_year + 1
+                        else:
+                            new_month = selected_month + 1
+                            new_year = selected_year
+                        
+                        if new_year <= max_year:
+                            st.session_state.calendar_year = new_year
+                            st.session_state.calendar_month = new_month
+                            st.rerun()
+                
+                # Create calendar with selected month/year (using ORIGINAL full dataset, not filtered)
+                calendar_chart = create_daily_calendar_chart(original_df, pnl, f"{calendar.month_name[selected_month]} {selected_year}", selected_year, selected_month)
+            else:
+                # No date data available
+                calendar_chart = create_daily_calendar_chart(df, pnl, "No Date Data")
+        else:
+            # No datetime column found
+            calendar_chart = create_daily_calendar_chart(df, pnl, "No Date Column")
+    else:
+        # No data
+        calendar_chart = create_daily_calendar_chart(df, pnl, "No Data")
+    
+    # Display the calendar
+    st.plotly_chart(calendar_chart, use_container_width=True)
+    
+    # Calendar insights (only show if we have data and datetime column)
+    if len(df) > 0 and 'datetime_col' in locals() and datetime_col and 'original_col' in locals():
+        col1, col2, col3 = st.columns(3)
+        
+        # Calculate daily stats for the selected month using ORIGINAL dataset
+        df_copy = original_df.copy()  # Use original_df instead of filtered df
+        df_copy[datetime_col] = pd.to_datetime(df_copy[original_col])
+        df_copy['trade_date'] = df_copy[datetime_col].dt.date
+        
+        # Filter for selected month/year from calendar (not main app filter)
+        if 'selected_year' in locals() and 'selected_month' in locals():
+            month_filter = (df_copy[datetime_col].dt.year == selected_year) & (df_copy[datetime_col].dt.month == selected_month)
+            month_df = df_copy[month_filter]
+            
+            if len(month_df) > 0:
+                daily_stats = month_df.groupby('trade_date').agg({
+                    pnl: ['count', 'sum']
+                })
+                daily_stats.columns = ['trades', 'pnl']
+                
+                with col1:
+                    profitable_days = (daily_stats['pnl'] > 0).sum()
+                    total_trading_days = len(daily_stats)
+                    loss_days = (daily_stats['pnl'] < 0).sum()
+                    
+                    st.metric("Profitable Days", f"{profitable_days}")
+                    st.metric("Loss Days", f"{loss_days}")
+                
+                with col2:
+                    if len(daily_stats) > 0:
+                        best_day_pnl = daily_stats['pnl'].max()
+                        worst_day_pnl = daily_stats['pnl'].min()
+                        
+                        st.metric("Best Day", f"${best_day_pnl:.2f}")
+                        st.metric("Worst Day", f"${worst_day_pnl:.2f}")
+                
+                with col3:
+                    if len(daily_stats) > 0:
+                        avg_trades_per_day = daily_stats['trades'].mean()
+                        total_month_pnl = daily_stats['pnl'].sum()
+                        
+                        st.metric("Avg Trades/Day", f"{avg_trades_per_day:.1f}")
+                        st.metric("Month Total P&L", f"${total_month_pnl:.2f}")
+            else:
+                # Show message if no data for selected month
+                st.info(f"📅 No trading data found for {calendar.month_name[selected_month]} {selected_year}")
+        else:
+            st.info("📅 Select a month and year to view calendar insights")
+    
+    # Hourly and Daily Analysis Charts
+    st.markdown("#### ⏰ Hourly & Daily Performance")
     
     hourly_chart, daily_chart = time_analysis_charts(time_data)
     
