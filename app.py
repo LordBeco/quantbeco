@@ -6,6 +6,13 @@ from analytics import compute_metrics, compute_rolling_metrics, compute_top_kpis
 from charts import (equity_curve, drawdown_curve, pnl_distribution, win_loss_pie, 
                    pnl_growth_over_time, rolling_performance_charts, time_analysis_charts, 
                    monthly_heatmap, risk_pain_charts, create_time_tables, create_trading_insights_charts, create_pip_analysis_chart, create_daily_calendar_chart, create_kelly_criterion_charts, create_kelly_insights_summary_chart)
+try:
+    from charts import create_deposit_withdrawal_analysis_charts, create_clean_vs_raw_equity_chart
+    DEPOSIT_CHARTS_AVAILABLE = True
+except ImportError:
+    DEPOSIT_CHARTS_AVAILABLE = False
+    
+from transaction_handler import process_broker_statement
 from diagnosis import diagnose, comprehensive_ai_diagnosis, generate_executive_summary
 from style import inject_css
 from tradelocker_api import TradeLockerAPI, test_tradelocker_connection, fetch_tradelocker_data, get_tradelocker_accounts
@@ -92,7 +99,7 @@ data_source = st.radio(
 
 df = None
 pnl = None
-starting_balance = 10000
+starting_balance = 10000  # Default fallback, will be updated
 
 if data_source == "📁 Upload CSV File":
     file = st.file_uploader("Upload Broker Statement (CSV)", type="csv")
@@ -101,16 +108,199 @@ if data_source == "📁 Upload CSV File":
         df_raw = pd.read_csv(file)
         df_raw.columns = [c.lower().replace(" ", "_") for c in df_raw.columns]
 
-        # Separate balance entries from trades for proper analysis
-        balance_df = pd.DataFrame()
+        # === STARTING BALANCE DETECTION ===
+        st.markdown("### 💰 Account Starting Balance")
+        
+        # First, try to detect starting balance from the data
+        detected_starting_balance = None
+        balance_detection_info = ""
+        
+        # Quick check for balance entries
         if 'type' in df_raw.columns:
-            balance_df = df_raw[df_raw['type'].str.contains('balance', case=False, na=False)].copy()
-            df = df_raw[~df_raw['type'].str.contains('balance', case=False, na=False)].copy()
-        elif 'comment' in df_raw.columns:
-            balance_df = df_raw[df_raw['comment'].str.contains('Initial|balance', case=False, na=False)].copy()
-            df = df_raw[~df_raw['comment'].str.contains('Initial|balance', case=False, na=False)].copy()
+            balance_entries = df_raw[df_raw['type'].str.contains('balance', case=False, na=False)]
+            if len(balance_entries) > 0:
+                # Clean the profit column for detection
+                balance_entries = balance_entries.copy()
+                balance_entries['profit_clean'] = pd.to_numeric(
+                    balance_entries['profit'].astype(str).str.replace(',', ''), 
+                    errors="coerce"
+                ).fillna(0)
+                
+                # Use the first positive balance entry
+                positive_balances = balance_entries[balance_entries['profit_clean'] > 0]
+                if len(positive_balances) > 0:
+                    detected_starting_balance = positive_balances['profit_clean'].iloc[0]
+                    balance_comment = positive_balances['comment'].iloc[0] if 'comment' in positive_balances.columns else "Balance entry"
+                    balance_detection_info = f"✅ **Auto-detected from CSV**: ${detected_starting_balance:,.2f} ({balance_comment})"
+        
+        # Show detection result
+        if balance_detection_info:
+            st.success(balance_detection_info)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            default_balance = detected_starting_balance if detected_starting_balance else 5000.0
+            
+            user_starting_balance = st.number_input(
+                "Confirm or adjust your starting balance:", 
+                min_value=100.0, 
+                max_value=1000000.0, 
+                value=default_balance,
+                step=100.0,
+                format="%.2f",
+                help="Auto-detected from your CSV or enter manually"
+            )
+        
+        with col2:
+            st.markdown("**Why this matters:**")
+            st.write("• Accurate equity calculations")
+            st.write("• Proper Kelly Criterion analysis")
+            st.write("• Correct performance metrics")
+            if detected_starting_balance:
+                st.write("• ✅ Found in your CSV data")
+        
+        # Update starting balance
+        starting_balance = user_starting_balance
+        
+        # Show quick calculation preview
+        pnl_col_preview = None
+        for col in ['profit', 'pnl']:
+            if col in df_raw.columns:
+                pnl_col_preview = col
+                break
+        
+        if pnl_col_preview:
+            # Clean the P&L column for preview
+            df_raw_preview = df_raw.copy()
+            df_raw_preview[pnl_col_preview] = pd.to_numeric(
+                df_raw_preview[pnl_col_preview].astype(str).str.replace(',', ''), 
+                errors="coerce"
+            ).fillna(0)
+            
+            # Exclude balance entries from P&L calculation
+            trading_only_preview = df_raw_preview.copy()
+            if 'type' in df_raw_preview.columns:
+                # Remove balance entries
+                trading_only_preview = trading_only_preview[
+                    ~trading_only_preview['type'].str.contains('balance', case=False, na=False)
+                ]
+            
+            # Calculate trading-only P&L
+            trading_pnl = trading_only_preview[pnl_col_preview].sum()
+            estimated_current = starting_balance + trading_pnl
+            
+            st.info(f"""
+            📊 **Quick Preview**: Starting ${starting_balance:,.2f} + Trading P&L ${trading_pnl:,.2f} = **${estimated_current:,.2f}** current equity
+            """)
         else:
+            st.info(f"📊 **Starting Balance Set**: ${starting_balance:,.2f}")
+
+        # === TRANSACTION PROCESSING (DEPOSITS/WITHDRAWALS) ===
+        st.markdown("### 🔍 Transaction Analysis")
+        
+        # Process broker statement to separate trading from non-trading transactions
+        pnl_col_for_processing = None
+        for col in ['profit', 'pnl']:
+            if col in df_raw.columns:
+                pnl_col_for_processing = col
+                break
+        
+        if pnl_col_for_processing:
+            # Clean numeric data first
+            df_raw[pnl_col_for_processing] = pd.to_numeric(
+                df_raw[pnl_col_for_processing].astype(str).str.replace(',', ''), 
+                errors="coerce"
+            ).fillna(0)
+            
+            # Process transactions
+            processed_data = process_broker_statement(df_raw, pnl_col_for_processing, starting_balance)
+            
+            # Display transaction analysis
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Transactions", processed_data['summary']['total_transactions'])
+                st.metric("Trading Transactions", processed_data['summary']['trading_transactions'])
+            
+            with col2:
+                st.metric("Deposits", processed_data['summary']['deposits'])
+                st.metric("Withdrawals", processed_data['summary']['withdrawals'])
+            
+            with col3:
+                net_deposits = processed_data.get('net_deposits', 0)
+                st.metric("Net Deposits", f"${net_deposits:,.2f}")
+                st.metric("Clean Trading P&L", f"${processed_data['clean_trading_pnl']:,.2f}")
+            
+            # Show insights
+            if processed_data['insights']:
+                st.markdown("#### 📊 Transaction Insights")
+                for insight in processed_data['insights']:
+                    if "✅" in insight:
+                        st.success(insight)
+                    elif "⚠️" in insight or "📉" in insight:
+                        st.warning(insight)
+                    else:
+                        st.info(insight)
+            
+            # Use cleaned trading data for analysis
+            df = processed_data['trading_df']
+            
+            # Show comparison charts if there are deposits/withdrawals
+            if processed_data['has_deposits_withdrawals'] and DEPOSIT_CHARTS_AVAILABLE:
+                st.markdown("#### 📈 Equity Curve Impact Analysis")
+                
+                # Raw vs Clean comparison
+                try:
+                    comparison_chart = create_clean_vs_raw_equity_chart(df_raw, df, pnl_col_for_processing)
+                    st.plotly_chart(comparison_chart, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not create comparison chart: {str(e)}")
+                
+                # Detailed deposit/withdrawal analysis
+                try:
+                    dw_charts = create_deposit_withdrawal_analysis_charts(processed_data)
+                    
+                    if 'equity_comparison' in dw_charts:
+                        st.plotly_chart(dw_charts['equity_comparison'], use_container_width=True)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    if 'deposit_timeline' in dw_charts:
+                        with col1:
+                            st.plotly_chart(dw_charts['deposit_timeline'], use_container_width=True)
+                    
+                    if 'performance_impact' in dw_charts:
+                        with col2:
+                            st.plotly_chart(dw_charts['performance_impact'], use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not create deposit/withdrawal charts: {str(e)}")
+                
+                # Important note about analysis
+                st.info("""
+                📊 **Important**: All performance metrics below are calculated using **trading-only data** 
+                (deposits and withdrawals excluded). This provides accurate trading performance analysis.
+                """)
+            elif processed_data['has_deposits_withdrawals']:
+                st.warning("⚠️ Deposits/withdrawals detected but visualization charts not available. Analysis still uses clean trading data.")
+                st.info("""
+                📊 **Important**: All performance metrics below are calculated using **trading-only data** 
+                (deposits and withdrawals excluded). This provides accurate trading performance analysis.
+                """)
+            
+        else:
+            # Fallback to original logic if no P&L column found
             df = df_raw.copy()
+
+        # Continue with original balance separation logic for compatibility
+        # (This is now mainly for starting balance detection)
+        balance_df = pd.DataFrame()
+        if 'type' in df.columns:
+            balance_df = df[df['type'].str.contains('balance', case=False, na=False)].copy()
+            # Don't filter out balance entries here since transaction_handler already did it
+        elif 'comment' in df.columns:
+            balance_df = df[df['comment'].str.contains('Initial|balance', case=False, na=False)].copy()
+            # Don't filter out balance entries here since transaction_handler already did it
 
         # Clean numeric columns and calculate REAL PnL (including commissions and swaps)
         numeric_cols = []
@@ -686,14 +876,19 @@ if df is not None and not df.empty:
     edge_analysis = analyze_edge_decay(df, pnl)
     
     # Edge Status Alert
-    if edge_analysis['edge_status'] == 'NO_EDGE':
+    edge_status = edge_analysis.get('edge_status', 'UNKNOWN')
+    if edge_status == 'NO_EDGE':
         st.error("🚨 **CRITICAL: NO STATISTICAL EDGE** - Strategy has no edge (expectancy ≤ 0)")
-    elif edge_analysis['edge_status'] == 'EDGE_DECAY':
+    elif edge_status == 'EDGE_DECAY':
         st.error("⚠️ **WARNING: EDGE DECAY DETECTED** - Expectancy is deteriorating")
-    elif edge_analysis['edge_status'] == 'EDGE_IMPROVING':
+    elif edge_status == 'EDGE_IMPROVING':
         st.success("✅ **POSITIVE: EDGE STRENGTHENING** - Expectancy is improving")
-    elif edge_analysis['edge_status'] == 'EDGE_STABLE':
+    elif edge_status == 'EDGE_STABLE':
         st.info("📊 **NEUTRAL: EDGE STABLE** - Performance appears consistent")
+    elif edge_status == 'INSUFFICIENT_DATA':
+        st.warning("⚠️ **INSUFFICIENT DATA** - Need more trades for edge analysis")
+    else:
+        st.info("📊 **EDGE STATUS**: Analysis in progress")
     
     # Professional Analysis Breakdown
     col1, col2 = st.columns(2)
@@ -702,28 +897,35 @@ if df is not None and not df.empty:
         st.markdown("#### 🎯 Risk Manager's Assessment")
         
         # Warnings
-        if edge_analysis['warnings']:
+        warnings = edge_analysis.get('warnings', [])
+        if warnings:
             st.markdown("**⚠️ WARNINGS:**")
-            for warning in edge_analysis['warnings']:
+            for warning in warnings:
                 st.markdown(f"• {warning}")
         
         # Recommendations
-        if edge_analysis['recommendations']:
+        recommendations = edge_analysis.get('recommendations', [])
+        if recommendations:
             st.markdown("**📋 RECOMMENDATIONS:**")
-            for rec in edge_analysis['recommendations']:
+            for rec in recommendations:
                 st.markdown(f"• {rec}")
         
         # Positive signals
-        if edge_analysis['signals']:
+        signals = edge_analysis.get('signals', [])
+        if signals:
             st.markdown("**✅ POSITIVE SIGNALS:**")
-            for signal in edge_analysis['signals']:
+            for signal in signals:
                 st.markdown(f"• {signal}")
+        
+        # Show message if no analysis available
+        if not warnings and not recommendations and not signals:
+            st.info("📊 Expand date range for detailed analysis")
     
     with col2:
         st.markdown("#### 📊 Current Risk Metrics")
         
         # Display risk metrics
-        risk_metrics = edge_analysis['risk_metrics']
+        risk_metrics = edge_analysis.get('risk_metrics', {})
         
         col2a, col2b = st.columns(2)
         with col2a:
@@ -738,31 +940,57 @@ if df is not None and not df.empty:
     
     # Professional Decision Rules
     st.markdown("#### 🎯 Professional Decision Rules")
-    decision_rules = edge_analysis['decision_rules']
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**📈 TRADE ONLY WHEN:**")
-        st.info(decision_rules.get('trade_only_when', 'N/A'))
+    # Check if decision_rules exists (might not exist with insufficient data)
+    if 'decision_rules' in edge_analysis:
+        decision_rules = edge_analysis['decision_rules']
         
-        st.markdown("**📉 REDUCE SIZE WHEN:**")
-        st.warning(decision_rules.get('reduce_size_when', 'N/A'))
-    
-    with col2:
-        st.markdown("**🛑 STOP TRADING WHEN:**")
-        st.error(decision_rules.get('stop_trading_when', 'N/A'))
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**📈 TRADE ONLY WHEN:**")
+            st.info(decision_rules.get('trade_only_when', 'N/A'))
+            
+            st.markdown("**📉 REDUCE SIZE WHEN:**")
+            st.warning(decision_rules.get('reduce_size_when', 'N/A'))
         
-        st.markdown("**🏷️ REGIME TAGGING:**")
-        st.info(decision_rules.get('regime_tagging', 'N/A'))
+        with col2:
+            st.markdown("**🛑 STOP TRADING WHEN:**")
+            st.error(decision_rules.get('stop_trading_when', 'N/A'))
+            
+            st.markdown("**🏷️ REGIME TAGGING:**")
+            st.info(decision_rules.get('regime_tagging', 'N/A'))
+    else:
+        # Handle case where there's insufficient data for decision rules
+        st.warning("⚠️ **Insufficient data for professional decision rules**")
+        st.info("Need at least 20 trades in the selected period for meaningful edge analysis.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**📈 TRADE ONLY WHEN:**")
+            st.info("Expand date range to get analysis")
+            
+            st.markdown("**📉 REDUCE SIZE WHEN:**")
+            st.info("Expand date range to get analysis")
+        
+        with col2:
+            st.markdown("**🛑 STOP TRADING WHEN:**")
+            st.info("Expand date range to get analysis")
+            
+            st.markdown("**🏷️ REGIME TAGGING:**")
+            st.info("Expand date range to get analysis")
     
     # Missing Analytics (Next Level)
-    with st.expander("🔴 Missing Analytics - Next Level Analysis Needed", expanded=False):
-        st.markdown("**To reach TradingView-grade analytics, you still need:**")
-        for missing in edge_analysis['missing_analytics']:
-            st.markdown(f"• {missing}")
-        
-        st.markdown("---")
-        st.markdown("**💡 Pro Tip:** These missing metrics separate professional traders from retail traders. Without them, you're trading half-blind.")
+    missing_analytics = edge_analysis.get('missing_analytics', [])
+    if missing_analytics:
+        with st.expander("🔴 Missing Analytics - Next Level Analysis Needed", expanded=False):
+            st.markdown("**To reach TradingView-grade analytics, you still need:**")
+            for missing in missing_analytics:
+                st.markdown(f"• {missing}")
+            
+            st.markdown("---")
+            st.markdown("**💡 Pro Tip:** These missing metrics separate professional traders from retail traders. Without them, you're trading half-blind.")
+    else:
+        st.info("📊 Expand date range to see advanced analytics recommendations")
 
     st.markdown("---")
 

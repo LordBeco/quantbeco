@@ -272,7 +272,7 @@ def compute_top_kpis(df, pnl, starting_balance_override=None):
     else:
         # Separate trades from balance entries
         trade_df = df.copy()
-        starting_balance = 10000  # Default fallback
+        starting_balance = 5000  # More realistic default for retail traders
         
         # Method 1: Look for balance entries in comment column
         if 'comment' in df.columns:
@@ -789,8 +789,16 @@ def compute_kelly_metrics(df, pnl, current_equity=None, user_current_lots=None):
     # Estimate current equity if not provided
     if current_equity is None:
         total_pnl = df[pnl].sum()
-        # Estimate starting balance (rough approximation)
-        estimated_starting_balance = 10000  # Default assumption
+        # Use a more intelligent default based on typical trading patterns
+        avg_trade_size = abs(df[pnl]).mean() if len(df) > 0 else 100
+        
+        if avg_trade_size < 50:
+            estimated_starting_balance = 5000  # Small account
+        elif avg_trade_size < 200:
+            estimated_starting_balance = 10000  # Medium account  
+        else:
+            estimated_starting_balance = 25000  # Larger account
+            
         current_equity = estimated_starting_balance + total_pnl
         estimated_equity = True
     else:

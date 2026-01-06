@@ -1365,3 +1365,265 @@ def create_kelly_insights_summary_chart(kelly_metrics):
     )
     
     return fig
+
+def create_deposit_withdrawal_analysis_charts(processed_data):
+    """
+    Create charts showing the impact of deposits and withdrawals on equity curves.
+    
+    Args:
+        processed_data: Dictionary from process_broker_statement function
+    
+    Returns:
+        Dictionary containing deposit/withdrawal analysis charts
+    """
+    
+    if not processed_data.get('has_deposits_withdrawals', False):
+        return {}
+    
+    charts = {}
+    
+    # 1. Equity Curve Comparison (Trading vs Actual)
+    equity_comparison_fig = create_equity_comparison_chart(processed_data)
+    if equity_comparison_fig:
+        charts['equity_comparison'] = equity_comparison_fig
+    
+    # 2. Deposit/Withdrawal Timeline
+    deposit_timeline_fig = create_deposit_timeline_chart(processed_data)
+    if deposit_timeline_fig:
+        charts['deposit_timeline'] = deposit_timeline_fig
+    
+    # 3. Performance Impact Analysis
+    impact_analysis_fig = create_performance_impact_chart(processed_data)
+    if impact_analysis_fig:
+        charts['performance_impact'] = impact_analysis_fig
+    
+    return charts
+
+def create_equity_comparison_chart(processed_data):
+    """Create chart comparing trading-only equity vs actual equity with deposits/withdrawals"""
+    
+    trading_df = processed_data['trading_df']
+    equity_timeline = processed_data['equity_timeline']
+    
+    if len(trading_df) == 0:
+        return None
+    
+    fig = go.Figure()
+    
+    # Trading-only equity curve (what performance would look like without deposits/withdrawals)
+    if 'equity_trading_only' in trading_df.columns:
+        fig.add_trace(go.Scatter(
+            x=list(range(1, len(trading_df) + 1)),
+            y=trading_df['equity_trading_only'],
+            mode='lines',
+            name='Trading Performance Only',
+            line=dict(color='#00ff88', width=3),
+            hovertemplate='Trade #%{x}<br>Trading P&L: $%{y:,.2f}<extra></extra>'
+        ))
+    
+    # Actual equity curve (including deposits/withdrawals)
+    if 'actual_balance' in trading_df.columns:
+        fig.add_trace(go.Scatter(
+            x=list(range(1, len(trading_df) + 1)),
+            y=trading_df['actual_balance'],
+            mode='lines',
+            name='Actual Account Balance',
+            line=dict(color='#ff6b6b', width=2, dash='dash'),
+            hovertemplate='Trade #%{x}<br>Actual Balance: $%{y:,.2f}<extra></extra>'
+        ))
+    
+    # Add markers for deposits/withdrawals
+    if len(equity_timeline) > 0:
+        deposit_withdrawals = equity_timeline[equity_timeline['type'].isin(['deposit', 'withdrawal'])]
+        
+        if len(deposit_withdrawals) > 0:
+            # Map to trade numbers (approximate)
+            trade_numbers = []
+            for _, dw in deposit_withdrawals.iterrows():
+                # Find closest trade by datetime or index
+                closest_trade = len(trading_df)  # Default to end
+                trade_numbers.append(closest_trade)
+            
+            fig.add_trace(go.Scatter(
+                x=trade_numbers,
+                y=deposit_withdrawals['actual_balance'],
+                mode='markers',
+                name='Deposits/Withdrawals',
+                marker=dict(
+                    size=12,
+                    color=['green' if amt > 0 else 'red' for amt in deposit_withdrawals.get('deposit_withdrawal', [0])],
+                    symbol='diamond',
+                    line=dict(width=2, color='white')
+                ),
+                hovertemplate='%{text}<br>Balance: $%{y:,.2f}<extra></extra>',
+                text=[f"{'Deposit' if amt > 0 else 'Withdrawal'}: ${abs(amt):,.2f}" 
+                     for amt in deposit_withdrawals.get('deposit_withdrawal', [0])]
+            ))
+    
+    fig.update_layout(
+        title="Equity Curve Analysis: Trading Performance vs Account Balance",
+        xaxis_title="Trade Number",
+        yaxis_title="Account Value ($)",
+        template="plotly_dark",
+        height=500,
+        hovermode='x unified'
+    )
+    
+    return fig
+
+def create_deposit_timeline_chart(processed_data):
+    """Create timeline chart showing deposits and withdrawals"""
+    
+    non_trading_df = processed_data['non_trading_df']
+    
+    if len(non_trading_df) == 0:
+        return None
+    
+    # Filter for deposits and withdrawals only
+    deposits_withdrawals = non_trading_df[
+        non_trading_df['transaction_type'].isin(['deposit', 'withdrawal'])
+    ].copy()
+    
+    if len(deposits_withdrawals) == 0:
+        return None
+    
+    fig = go.Figure()
+    
+    # Extract datetime and amount
+    pnl_col = 'profit' if 'profit' in deposits_withdrawals.columns else 'pnl'
+    
+    if pnl_col in deposits_withdrawals.columns:
+        # Separate deposits and withdrawals
+        deposits = deposits_withdrawals[deposits_withdrawals[pnl_col] > 0]
+        withdrawals = deposits_withdrawals[deposits_withdrawals[pnl_col] < 0]
+        
+        # Add deposits
+        if len(deposits) > 0:
+            fig.add_trace(go.Bar(
+                x=list(range(len(deposits))),
+                y=deposits[pnl_col],
+                name='Deposits',
+                marker_color='green',
+                text=[f"${amt:,.2f}" for amt in deposits[pnl_col]],
+                textposition='auto',
+                hovertemplate='Deposit: $%{y:,.2f}<extra></extra>'
+            ))
+        
+        # Add withdrawals
+        if len(withdrawals) > 0:
+            fig.add_trace(go.Bar(
+                x=list(range(len(deposits), len(deposits) + len(withdrawals))),
+                y=withdrawals[pnl_col],
+                name='Withdrawals',
+                marker_color='red',
+                text=[f"${amt:,.2f}" for amt in withdrawals[pnl_col]],
+                textposition='auto',
+                hovertemplate='Withdrawal: $%{y:,.2f}<extra></extra>'
+            ))
+    
+    fig.update_layout(
+        title="Deposit and Withdrawal Timeline",
+        xaxis_title="Transaction Sequence",
+        yaxis_title="Amount ($)",
+        template="plotly_dark",
+        height=400
+    )
+    
+    return fig
+
+def create_performance_impact_chart(processed_data):
+    """Create chart showing performance impact of deposits/withdrawals"""
+    
+    summary = processed_data['summary']
+    clean_trading_pnl = processed_data['clean_trading_pnl']
+    net_deposits = processed_data.get('net_deposits', 0)
+    
+    fig = go.Figure()
+    
+    # Performance breakdown
+    categories = ['Trading P&L', 'Net Deposits', 'Total Change']
+    values = [clean_trading_pnl, net_deposits, clean_trading_pnl + net_deposits]
+    colors = ['#00ff88' if clean_trading_pnl > 0 else '#ff6b6b',
+              '#4ecdc4' if net_deposits > 0 else '#ffa726',
+              '#45b7d1' if values[2] > 0 else '#ff6b6b']
+    
+    fig.add_trace(go.Bar(
+        x=categories,
+        y=values,
+        marker_color=colors,
+        text=[f"${v:,.2f}" for v in values],
+        textposition='auto',
+        name='Account Changes'
+    ))
+    
+    # Add zero line
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    
+    fig.update_layout(
+        title="Account Performance Breakdown",
+        xaxis_title="Component",
+        yaxis_title="Amount ($)",
+        template="plotly_dark",
+        height=400
+    )
+    
+    return fig
+
+def create_clean_vs_raw_equity_chart(df_raw, df_clean, pnl_col):
+    """
+    Create side-by-side comparison of raw vs clean equity curves.
+    
+    Args:
+        df_raw: Original dataframe with all transactions
+        df_clean: Cleaned dataframe with only trading transactions
+        pnl_col: P&L column name
+    
+    Returns:
+        Plotly figure comparing equity curves
+    """
+    
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Raw Data (All Transactions)", "Clean Data (Trading Only)"),
+        shared_yaxes=True
+    )
+    
+    # Raw equity curve
+    if len(df_raw) > 0:
+        raw_equity = df_raw[pnl_col].cumsum()
+        fig.add_trace(
+            go.Scatter(
+                x=list(range(1, len(df_raw) + 1)),
+                y=raw_equity,
+                mode='lines',
+                name='Raw Equity',
+                line=dict(color='#ff6b6b', width=2)
+            ),
+            row=1, col=1
+        )
+    
+    # Clean equity curve
+    if len(df_clean) > 0:
+        clean_equity = df_clean[pnl_col].cumsum()
+        fig.add_trace(
+            go.Scatter(
+                x=list(range(1, len(df_clean) + 1)),
+                y=clean_equity,
+                mode='lines',
+                name='Clean Equity',
+                line=dict(color='#00ff88', width=2)
+            ),
+            row=1, col=2
+        )
+    
+    fig.update_layout(
+        title="Equity Curve Comparison: Raw vs Clean Data",
+        template="plotly_dark",
+        height=500
+    )
+    
+    fig.update_xaxes(title_text="Transaction Number", row=1, col=1)
+    fig.update_xaxes(title_text="Trade Number", row=1, col=2)
+    fig.update_yaxes(title_text="Cumulative P&L ($)", row=1, col=1)
+    
+    return fig
