@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import calendar
 from datetime import datetime, timedelta
-from analytics import compute_metrics, compute_rolling_metrics, compute_top_kpis, compute_time_analysis, compute_risk_pain_metrics, compute_trading_insights, generate_trading_insights_summary, analyze_edge_decay
+from analytics import compute_metrics, compute_rolling_metrics, compute_top_kpis, compute_time_analysis, compute_risk_pain_metrics, compute_trading_insights, generate_trading_insights_summary, analyze_edge_decay, compute_kelly_metrics
 from charts import (equity_curve, drawdown_curve, pnl_distribution, win_loss_pie, 
                    pnl_growth_over_time, rolling_performance_charts, time_analysis_charts, 
-                   monthly_heatmap, risk_pain_charts, create_time_tables, create_trading_insights_charts, create_pip_analysis_chart, create_daily_calendar_chart)
+                   monthly_heatmap, risk_pain_charts, create_time_tables, create_trading_insights_charts, create_pip_analysis_chart, create_daily_calendar_chart, create_kelly_criterion_charts, create_kelly_insights_summary_chart)
 from diagnosis import diagnose, comprehensive_ai_diagnosis, generate_executive_summary
 from style import inject_css
 from tradelocker_api import TradeLockerAPI, test_tradelocker_connection, fetch_tradelocker_data, get_tradelocker_accounts
@@ -434,6 +434,35 @@ if df is not None and not df.empty:
     risk_data = compute_risk_pain_metrics(df, pnl)
     trading_insights = compute_trading_insights(df, pnl)
     insights_summary = generate_trading_insights_summary(trading_insights)
+    
+    # Compute Kelly Criterion metrics
+    current_equity_for_kelly = top_kpis.get('Current Equity', starting_balance)
+    # Extract numeric value from the formatted string
+    if isinstance(current_equity_for_kelly, str):
+        current_equity_for_kelly = float(current_equity_for_kelly.replace('$', '').replace(',', ''))
+    
+    # Add user input for current lot size
+    st.markdown("#### 💰 Your Current Position Sizing")
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        user_current_lots = st.number_input(
+            "What lot size are you currently using?", 
+            min_value=0.001, 
+            max_value=10.0, 
+            value=0.1,  # Default based on user's mention
+            step=0.001,
+            format="%.3f",
+            help="Enter your typical lot size to get personalized Kelly recommendations"
+        )
+    
+    with col2:
+        st.markdown("**Quick Reference:**")
+        st.write(f"• Your equity: ${current_equity_for_kelly:,.2f}")
+        st.write(f"• Traditional rate: {user_current_lots / (current_equity_for_kelly / 1000):.3f} per 1k")
+        st.write(f"• Standard rate: 0.020 per 1k")
+    
+    kelly_metrics = compute_kelly_metrics(df, pnl, current_equity_for_kelly, user_current_lots)
 
     # === TOP KPIs SECTION ===
     st.markdown("---")
@@ -481,6 +510,161 @@ if df is not None and not df.empty:
     cols = st.columns(len(metrics))
     for col, (k, v) in zip(cols, metrics.items()):
         col.metric(k, v)
+
+    # === KELLY CRITERION POSITION SIZING ===
+    st.markdown("---")
+    st.markdown("### 🎯 Kelly Criterion Position Sizing")
+    st.markdown("**Optimal position sizing based on your trading history and current equity**")
+    
+    if kelly_metrics.get('has_kelly_data', False):
+        # Kelly Overview Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            kelly_fraction = kelly_metrics['kelly_fraction']
+            kelly_pct = kelly_fraction * 100
+            if kelly_fraction > 0:
+                st.metric("Kelly Fraction", f"{kelly_pct:.2f}%", 
+                         help="Optimal % of capital to risk per trade")
+            else:
+                st.metric("Kelly Fraction", "No Edge", 
+                         help="Negative Kelly indicates no statistical edge")
+        
+        with col2:
+            conservative_kelly = kelly_metrics['conservative_kelly']
+            conservative_pct = conservative_kelly * 100
+            st.metric("Conservative Kelly", f"{conservative_pct:.2f}%", 
+                     help="25% of full Kelly for safer growth")
+        
+        with col3:
+            recommended_lots = kelly_metrics['lot_recommendation']['recommended_lot_size']
+            st.metric("Recommended Lot Size", f"{recommended_lots:.3f}", 
+                     help="Based on Kelly Criterion and current equity")
+        
+        with col4:
+            current_equity = kelly_metrics['current_equity']
+            st.metric("Current Equity", f"${current_equity:,.2f}", 
+                     help="Used for position sizing calculations")
+        
+        # Kelly Analysis Summary
+        st.markdown("#### 📊 Kelly Analysis Summary")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Risk Assessment
+            risk_level = kelly_metrics['risk_level']
+            risk_assessment = kelly_metrics['lot_recommendation']['risk_assessment']
+            
+            if risk_level == 'NO EDGE':
+                st.error(f"🚨 **Risk Level**: {risk_level}")
+                st.error(f"**Assessment**: {risk_assessment}")
+            elif risk_level in ['HIGH', 'EXTREME']:
+                st.warning(f"⚠️ **Risk Level**: {risk_level}")
+                st.warning(f"**Assessment**: {risk_assessment}")
+            else:
+                st.success(f"✅ **Risk Level**: {risk_level}")
+                st.info(f"**Assessment**: {risk_assessment}")
+            
+            # Edge Analysis
+            edge = kelly_metrics['edge']
+            if edge > 0:
+                st.success(f"📈 **Statistical Edge**: ${edge:.2f} per trade")
+            else:
+                st.error(f"📉 **No Edge**: ${edge:.2f} per trade (negative expectancy)")
+        
+        with col2:
+            # Position Sizing Comparison
+            st.markdown("**Position Sizing Comparison:**")
+            
+            traditional_lots = (current_equity / 1000) * 0.02
+            kelly_lots = recommended_lots
+            
+            st.write(f"• **Your Traditional Method**: {traditional_lots:.3f} lots (0.02 per 1k)")
+            st.write(f"• **Kelly Recommended**: {kelly_lots:.3f} lots")
+            
+            difference_pct = ((kelly_lots - traditional_lots) / traditional_lots * 100) if traditional_lots > 0 else 0
+            
+            if difference_pct > 10:
+                st.write(f"• **Difference**: +{difference_pct:.1f}% (Kelly suggests larger size)")
+            elif difference_pct < -10:
+                st.write(f"• **Difference**: {difference_pct:.1f}% (Kelly suggests smaller size)")
+            else:
+                st.write(f"• **Difference**: {difference_pct:.1f}% (Similar sizing)")
+            
+            # Risk-Reward Metrics
+            odds_ratio = kelly_metrics['odds_ratio']
+            win_rate_pct = kelly_metrics['win_rate'] * 100
+            
+            st.write(f"• **Risk:Reward Ratio**: {odds_ratio:.2f}:1")
+            st.write(f"• **Win Rate**: {win_rate_pct:.1f}%")
+        
+        # Kelly Insights
+        st.markdown("#### 💡 Kelly Insights & Recommendations")
+        
+        insights = kelly_metrics.get('insights', [])
+        if insights:
+            for insight in insights:
+                if "🚨" in insight or "❌" in insight:
+                    st.error(insight)
+                elif "⚠️" in insight:
+                    st.warning(insight)
+                elif "✅" in insight or "🎯" in insight:
+                    st.success(insight)
+                else:
+                    st.info(insight)
+        
+        # Kelly Charts
+        st.markdown("#### 📊 Kelly Criterion Analysis Charts")
+        
+        kelly_charts = create_kelly_criterion_charts(kelly_metrics)
+        
+        if 'kelly_overview' in kelly_charts:
+            st.plotly_chart(kelly_charts['kelly_overview'], use_container_width=True)
+        
+        col1, col2 = st.columns(2)
+        
+        if 'position_sizing' in kelly_charts:
+            with col1:
+                st.plotly_chart(kelly_charts['position_sizing'], use_container_width=True)
+        
+        if 'risk_reward' in kelly_charts:
+            with col2:
+                st.plotly_chart(kelly_charts['risk_reward'], use_container_width=True)
+        
+        # Kelly Insights Summary Chart
+        insights_chart = create_kelly_insights_summary_chart(kelly_metrics)
+        if insights_chart:
+            st.plotly_chart(insights_chart, use_container_width=True)
+        
+        # Practical Implementation Guide
+        with st.expander("🛠️ Practical Implementation Guide", expanded=False):
+            st.markdown("""
+            **How to Use Kelly Criterion Results:**
+            
+            1. **Start Conservative**: Use 25% of the full Kelly fraction (Conservative Kelly)
+            2. **Monitor Performance**: Track if your edge remains consistent over time
+            3. **Adjust Gradually**: Increase position size only if edge strengthens
+            4. **Risk Management**: Never exceed the full Kelly fraction
+            5. **Regular Review**: Recalculate Kelly fraction monthly with new data
+            
+            **Position Sizing Formula Used:**
+            - Kelly Fraction = (Win Rate × Avg Win - Loss Rate × Avg Loss) / Avg Win
+            - Recommended Lots = (Current Equity / 1000) × Base Lot Size × Kelly Multiplier
+            - Conservative Scaling = 25% of Full Kelly (reduces risk of ruin)
+            
+            **Warning Signs to Reduce Position Size:**
+            - Kelly fraction becomes negative (no edge)
+            - Win rate drops significantly
+            - Average losses increase relative to wins
+            - Drawdown exceeds expected levels
+            """)
+    
+    else:
+        st.error("❌ **Kelly Criterion Analysis Unavailable**")
+        st.info("Insufficient trading data for Kelly Criterion calculation. Need both winning and losing trades.")
+
+    st.markdown("---")
 
     # === EQUITY & PNL GROWTH ===
     st.markdown("### 💰 Equity & PnL Growth")

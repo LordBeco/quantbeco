@@ -1,5 +1,12 @@
 import pandas as pd
 import numpy as np
+from kelly_criterion import (
+    calculate_kelly_fraction, 
+    calculate_rolling_kelly, 
+    recommend_lot_size, 
+    analyze_position_sizing_history,
+    generate_kelly_insights
+)
 
 def compute_metrics(df, pnl):
     wins = df[df[pnl] > 0]
@@ -764,3 +771,102 @@ def generate_trading_insights_summary(insights):
                 summary.append(f"📉 **Pip performance**: Average {avg_pips:.1f} pips per trade - negative pip capture")
     
     return summary
+
+def compute_kelly_metrics(df, pnl, current_equity=None, user_current_lots=None):
+    """
+    Compute Kelly Criterion metrics and position sizing recommendations.
+    
+    Args:
+        df: DataFrame with trading data
+        pnl: Column name containing P&L values
+        current_equity: Current account equity (optional, will estimate if not provided)
+        user_current_lots: User's current lot size for better recommendations
+    
+    Returns:
+        Dictionary containing Kelly analysis and recommendations
+    """
+    
+    # Estimate current equity if not provided
+    if current_equity is None:
+        total_pnl = df[pnl].sum()
+        # Estimate starting balance (rough approximation)
+        estimated_starting_balance = 10000  # Default assumption
+        current_equity = estimated_starting_balance + total_pnl
+        estimated_equity = True
+    else:
+        estimated_equity = False
+    
+    # Analyze position sizing history
+    kelly_analysis = analyze_position_sizing_history(df, pnl)
+    
+    if not kelly_analysis.get('has_analysis', False):
+        return {
+            'error': 'Insufficient data for Kelly Criterion analysis',
+            'has_kelly_data': False
+        }
+    
+    # Get Kelly fraction and recommendations
+    kelly_data = kelly_analysis['kelly_analysis']
+    
+    # Pass user's current lot size for better recommendations
+    lot_recommendation = recommend_lot_size(
+        current_equity, 
+        kelly_data['conservative_kelly'],
+        user_current_lots=user_current_lots
+    )
+    
+    # Generate insights
+    insights = generate_kelly_insights(kelly_analysis, current_equity)
+    
+    # Add user-specific insights if current lot size provided
+    if user_current_lots is not None:
+        user_base_rate = user_current_lots / (current_equity / 1000)
+        traditional_base_rate = 0.02
+        
+        if user_base_rate > traditional_base_rate * 2:
+            insights.insert(0, f"📊 You're using {user_base_rate:.3f} lots per 1k (vs traditional 0.02) - more aggressive approach")
+        
+        # Compare with Kelly optimal
+        kelly_optimal_lots = (current_equity / 1000) * user_base_rate * kelly_data['kelly_fraction']
+        if user_current_lots > kelly_optimal_lots * 2:
+            insights.insert(1, f"⚠️ Your {user_current_lots} lots is {user_current_lots/kelly_optimal_lots:.1f}x larger than Kelly optimal ({kelly_optimal_lots:.3f})")
+    
+    # Calculate rolling Kelly metrics
+    df_with_rolling = calculate_rolling_kelly(df, pnl, window=50)
+    
+    # Prepare comprehensive results
+    results = {
+        'has_kelly_data': True,
+        'estimated_equity': estimated_equity,
+        'current_equity': current_equity,
+        'user_current_lots': user_current_lots,
+        'kelly_fraction': kelly_data['kelly_fraction'],
+        'conservative_kelly': kelly_data['conservative_kelly'],
+        'recommendation': kelly_data['recommendation'],
+        'risk_level': kelly_data['risk_level'],
+        'odds_ratio': kelly_data['odds_ratio'],
+        'edge': kelly_data['edge'],
+        'win_rate': kelly_data['win_rate'],
+        'avg_win': kelly_data['avg_win'],
+        'avg_loss': kelly_data['avg_loss'],
+        'lot_recommendation': lot_recommendation,
+        'insights': insights,
+        'rolling_kelly_available': 'rolling_kelly_fraction' in df_with_rolling.columns,
+        'analysis_summary': {
+            'total_trades': kelly_analysis['total_trades'],
+            'statistical_edge': kelly_data['kelly_fraction'] > 0,
+            'edge_strength': 'Strong' if kelly_data['kelly_fraction'] > 0.15 else 'Moderate' if kelly_data['kelly_fraction'] > 0.05 else 'Weak' if kelly_data['kelly_fraction'] > 0 else 'None',
+            'risk_assessment': lot_recommendation['risk_assessment'],
+            'user_vs_kelly_ratio': user_current_lots / lot_recommendation['recommended_lot_size'] if user_current_lots and lot_recommendation['recommended_lot_size'] > 0 else None
+        }
+    }
+    
+    # Add rolling data if available
+    if results['rolling_kelly_available']:
+        results['rolling_data'] = {
+            'latest_kelly': df_with_rolling['rolling_kelly_fraction'].iloc[-1] if len(df_with_rolling) > 0 else 0,
+            'kelly_trend': 'Improving' if len(df_with_rolling) > 10 and df_with_rolling['rolling_kelly_fraction'].iloc[-5:].mean() > df_with_rolling['rolling_kelly_fraction'].iloc[-15:-5].mean() else 'Declining',
+            'kelly_stability': df_with_rolling['rolling_kelly_fraction'].std() if len(df_with_rolling) > 0 else 0
+        }
+    
+    return results

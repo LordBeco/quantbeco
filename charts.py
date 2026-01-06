@@ -1011,3 +1011,357 @@ def create_daily_calendar_chart(df, pnl_col, period_name="All Time", selected_ye
     )
     
     return fig
+
+def create_kelly_criterion_charts(kelly_metrics):
+    """
+    Create comprehensive Kelly Criterion analysis charts.
+    
+    Args:
+        kelly_metrics: Dictionary from compute_kelly_metrics function
+    
+    Returns:
+        Dictionary containing Kelly-related charts
+    """
+    
+    if not kelly_metrics.get('has_kelly_data', False):
+        return {}
+    
+    charts = {}
+    
+    # 1. Kelly Fraction Overview Chart
+    kelly_overview_fig = create_kelly_overview_chart(kelly_metrics)
+    if kelly_overview_fig:
+        charts['kelly_overview'] = kelly_overview_fig
+    
+    # 2. Position Size Recommendation Chart
+    position_size_fig = create_position_size_chart(kelly_metrics)
+    if position_size_fig:
+        charts['position_sizing'] = position_size_fig
+    
+    # 3. Risk-Reward Analysis Chart
+    risk_reward_fig = create_risk_reward_chart(kelly_metrics)
+    if risk_reward_fig:
+        charts['risk_reward'] = risk_reward_fig
+    
+    return charts
+
+def create_kelly_overview_chart(kelly_metrics):
+    """Create Kelly Criterion overview chart showing key metrics"""
+    
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "Kelly Fraction vs Conservative Kelly",
+            "Win Rate vs Odds Ratio",
+            "Edge Analysis",
+            "Risk Level Assessment"
+        ),
+        specs=[[{"type": "bar"}, {"type": "scatter"}],
+               [{"type": "indicator"}, {"type": "bar"}]]
+    )
+    
+    # 1. Kelly Fraction Comparison (Top Left)
+    kelly_fraction = kelly_metrics['kelly_fraction']
+    conservative_kelly = kelly_metrics['conservative_kelly']
+    
+    fig.add_trace(
+        go.Bar(
+            x=['Full Kelly', 'Conservative Kelly (25%)', 'Your Current Risk'],
+            y=[kelly_fraction, conservative_kelly, 0.02],  # Assuming 2% current risk
+            marker_color=['#ff6b6b', '#4ecdc4', '#45b7d1'],
+            name="Kelly Fractions"
+        ),
+        row=1, col=1
+    )
+    
+    # 2. Win Rate vs Odds Ratio (Top Right)
+    win_rate_pct = kelly_metrics['win_rate'] * 100
+    odds_ratio = kelly_metrics['odds_ratio']
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[odds_ratio],
+            y=[win_rate_pct],
+            mode='markers',
+            marker=dict(
+                size=20,
+                color=kelly_fraction,
+                colorscale='RdYlGn',
+                showscale=True,
+                colorbar=dict(title="Kelly Fraction")
+            ),
+            name="Performance Point",
+            text=[f"Kelly: {kelly_fraction:.3f}"],
+            textposition="top center"
+        ),
+        row=1, col=2
+    )
+    
+    # Add reference lines for good performance
+    fig.add_hline(y=50, line_dash="dash", line_color="gray", row=1, col=2)
+    fig.add_vline(x=1.5, line_dash="dash", line_color="gray", row=1, col=2)
+    
+    # 3. Edge Indicator (Bottom Left)
+    edge_value = kelly_metrics['edge']
+    edge_color = "green" if edge_value > 0 else "red"
+    
+    fig.add_trace(
+        go.Indicator(
+            mode="gauge+number+delta",
+            value=edge_value,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': "Expected Value per Trade"},
+            gauge={
+                'axis': {'range': [None, max(abs(edge_value) * 2, 10)]},
+                'bar': {'color': edge_color},
+                'steps': [
+                    {'range': [0, max(abs(edge_value) * 2, 10) * 0.5], 'color': "lightgray"},
+                    {'range': [max(abs(edge_value) * 2, 10) * 0.5, max(abs(edge_value) * 2, 10)], 'color': "gray"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 0
+                }
+            }
+        ),
+        row=2, col=1
+    )
+    
+    # 4. Risk Level Assessment (Bottom Right)
+    risk_levels = ['LOW', 'MODERATE', 'HIGH', 'EXTREME', 'NO EDGE']
+    risk_colors = ['#4ecdc4', '#45b7d1', '#ffa726', '#ff6b6b', '#8e24aa']
+    current_risk = kelly_metrics['risk_level']
+    
+    risk_values = [1 if level == current_risk else 0.3 for level in risk_levels]
+    
+    fig.add_trace(
+        go.Bar(
+            x=risk_levels,
+            y=risk_values,
+            marker_color=[risk_colors[i] if risk_levels[i] == current_risk else 'lightgray' 
+                         for i in range(len(risk_levels))],
+            name="Risk Level"
+        ),
+        row=2, col=2
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title="Kelly Criterion Analysis Overview",
+        template="plotly_dark",
+        height=800,
+        showlegend=False
+    )
+    
+    # Update axes labels
+    fig.update_xaxes(title_text="Fraction of Capital", row=1, col=1)
+    fig.update_yaxes(title_text="Kelly Fraction", row=1, col=1)
+    
+    fig.update_xaxes(title_text="Odds Ratio (Avg Win / Avg Loss)", row=1, col=2)
+    fig.update_yaxes(title_text="Win Rate (%)", row=1, col=2)
+    
+    fig.update_xaxes(title_text="Risk Level", row=2, col=2)
+    fig.update_yaxes(title_text="Current Level", row=2, col=2)
+    
+    return fig
+
+def create_position_size_chart(kelly_metrics):
+    """Create position sizing recommendation chart"""
+    
+    lot_rec = kelly_metrics['lot_recommendation']
+    current_equity = kelly_metrics['current_equity']
+    
+    # Create comparison of different position sizing methods
+    fig = go.Figure()
+    
+    # Traditional method (0.02 per 1k)
+    traditional_lots = (current_equity / 1000) * 0.02
+    
+    # Kelly-based method
+    kelly_lots = lot_rec['recommended_lot_size']
+    
+    # Conservative Kelly
+    conservative_lots = lot_rec['base_lot_size'] * kelly_metrics['conservative_kelly']
+    
+    methods = ['Traditional\n(0.02/1k)', 'Kelly Optimal', 'Conservative Kelly', 'Recommended']
+    lot_sizes = [traditional_lots, 
+                lot_rec['base_lot_size'] * kelly_metrics['kelly_fraction'],
+                conservative_lots, 
+                kelly_lots]
+    
+    colors = ['#45b7d1', '#ff6b6b', '#4ecdc4', '#ffa726']
+    
+    fig.add_trace(go.Bar(
+        x=methods,
+        y=lot_sizes,
+        marker_color=colors,
+        text=[f"{size:.3f}" for size in lot_sizes],
+        textposition='auto',
+        name="Lot Sizes"
+    ))
+    
+    # Add risk level annotations
+    for i, (method, size) in enumerate(zip(methods, lot_sizes)):
+        risk_pct = (size / (current_equity / 1000)) * 2  # Rough risk estimate
+        fig.add_annotation(
+            x=i, y=size + max(lot_sizes) * 0.05,
+            text=f"~{risk_pct:.1f}% risk",
+            showarrow=False,
+            font=dict(size=10, color="white")
+        )
+    
+    fig.update_layout(
+        title=f"Position Sizing Recommendations (Current Equity: ${current_equity:,.2f})",
+        xaxis_title="Sizing Method",
+        yaxis_title="Recommended Lot Size",
+        template="plotly_dark",
+        height=500
+    )
+    
+    return fig
+
+def create_risk_reward_chart(kelly_metrics):
+    """Create risk-reward analysis chart"""
+    
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Win Rate vs Kelly Fraction", "Odds Ratio Impact"),
+        specs=[[{"type": "scatter"}, {"type": "bar"}]]
+    )
+    
+    # 1. Win Rate vs Kelly Fraction sensitivity analysis
+    win_rates = np.arange(0.3, 0.8, 0.05)
+    kelly_fractions = []
+    
+    avg_win = kelly_metrics['avg_win']
+    avg_loss = abs(kelly_metrics['avg_loss'])
+    odds_ratio = kelly_metrics['odds_ratio']
+    
+    for wr in win_rates:
+        # Kelly formula: (bp - q) / b where b = odds_ratio, p = win_rate, q = 1-p
+        kelly_f = (odds_ratio * wr - (1 - wr)) / odds_ratio
+        kelly_fractions.append(max(0, kelly_f))  # Don't go negative
+    
+    fig.add_trace(
+        go.Scatter(
+            x=win_rates * 100,
+            y=kelly_fractions,
+            mode='lines+markers',
+            name='Kelly Fraction',
+            line=dict(color='#4ecdc4', width=3)
+        ),
+        row=1, col=1
+    )
+    
+    # Highlight current position
+    current_wr = kelly_metrics['win_rate'] * 100
+    current_kelly = kelly_metrics['kelly_fraction']
+    
+    fig.add_trace(
+        go.Scatter(
+            x=[current_wr],
+            y=[current_kelly],
+            mode='markers',
+            marker=dict(size=15, color='red', symbol='star'),
+            name='Your Current Performance'
+        ),
+        row=1, col=1
+    )
+    
+    # 2. Odds Ratio Impact
+    odds_ratios = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    kelly_for_odds = []
+    
+    current_wr_decimal = kelly_metrics['win_rate']
+    for odds in odds_ratios:
+        kelly_f = (odds * current_wr_decimal - (1 - current_wr_decimal)) / odds
+        kelly_for_odds.append(max(0, kelly_f))
+    
+    colors = ['red' if odds < 1.5 else 'orange' if odds < 2.0 else 'green' for odds in odds_ratios]
+    
+    fig.add_trace(
+        go.Bar(
+            x=[f"{odds}:1" for odds in odds_ratios],
+            y=kelly_for_odds,
+            marker_color=colors,
+            name='Kelly Fraction'
+        ),
+        row=1, col=2
+    )
+    
+    # Highlight current odds ratio
+    current_odds_idx = min(range(len(odds_ratios)), 
+                          key=lambda i: abs(odds_ratios[i] - kelly_metrics['odds_ratio']))
+    
+    fig.update_layout(
+        title="Risk-Reward Sensitivity Analysis",
+        template="plotly_dark",
+        height=500,
+        showlegend=True
+    )
+    
+    # Update axes
+    fig.update_xaxes(title_text="Win Rate (%)", row=1, col=1)
+    fig.update_yaxes(title_text="Kelly Fraction", row=1, col=1)
+    
+    fig.update_xaxes(title_text="Risk:Reward Ratio", row=1, col=2)
+    fig.update_yaxes(title_text="Kelly Fraction", row=1, col=2)
+    
+    return fig
+
+def create_kelly_insights_summary_chart(kelly_metrics):
+    """Create a summary chart showing key Kelly insights"""
+    
+    insights = kelly_metrics.get('insights', [])
+    
+    if not insights:
+        return None
+    
+    # Create a text-based summary chart
+    fig = go.Figure()
+    
+    # Add invisible scatter plot for layout
+    fig.add_trace(go.Scatter(
+        x=[0], y=[0],
+        mode='markers',
+        marker=dict(size=1, color='rgba(0,0,0,0)'),
+        showlegend=False
+    ))
+    
+    # Add insights as annotations
+    y_positions = np.linspace(0.9, 0.1, len(insights))
+    
+    for i, insight in enumerate(insights):
+        # Determine color based on insight type
+        if "🚨" in insight or "❌" in insight:
+            color = "#ff6b6b"
+        elif "⚠️" in insight:
+            color = "#ffa726"
+        elif "✅" in insight or "🎯" in insight:
+            color = "#4ecdc4"
+        else:
+            color = "#45b7d1"
+        
+        fig.add_annotation(
+            x=0.05, y=y_positions[i],
+            text=insight,
+            showarrow=False,
+            font=dict(size=12, color=color),
+            xref="paper", yref="paper",
+            xanchor="left", yanchor="middle",
+            bgcolor="rgba(0,0,0,0.1)",
+            bordercolor=color,
+            borderwidth=1
+        )
+    
+    fig.update_layout(
+        title="Kelly Criterion Insights & Recommendations",
+        template="plotly_dark",
+        height=max(400, len(insights) * 50),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    
+    return fig
