@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\backtesting_engine\report_generator.py
+# hypothesis_version: 6.141.1
+
+[-0.7, 0.0, 10000.0, 1000000, '%Y-%m-%d %H:%M:%S', 'Close Price', 'Close Time', 'Comment', 'Commission', 'Lots', 'Open Price', 'Open Time', 'Profit', 'Swaps', 'Symbol', 'Ticket', 'Type', 'USD', 'buy', 'coerce', 'sell']

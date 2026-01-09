@@ -28,6 +28,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Environment Variables
+.env.local
+.env.production
+
 # IDE
 .vscode/
 .idea/

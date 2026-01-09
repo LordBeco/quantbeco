@@ -49,7 +49,7 @@ def analyze_traded_symbols(df, pnl_col):
     symbol_stats.columns = ['Trade_Count', 'Total_PnL', 'Avg_PnL', 'PnL_Volatility']
     
     # Calculate win rate separately
-    win_rates = df.groupby(symbol_col).apply(lambda x: (x[pnl_col] > 0).sum() / len(x) * 100, include_groups=False).round(2)
+    win_rates = df.groupby(symbol_col).apply(lambda x: (x[pnl_col] > 0).sum() / len(x) * 100).round(2)
     symbol_stats['Win_Rate'] = win_rates
     
     # Calculate additional metrics for each symbol

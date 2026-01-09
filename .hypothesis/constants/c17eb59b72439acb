@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\config.py
+# hypothesis_version: 6.141.1
+
+['0.0', '0.1', '1.0', '10000', '2000', '2048', 'DEFAULT_COMMISSION', 'DEFAULT_LEVERAGE', 'DEFAULT_SLIPPAGE', 'DEFAULT_TIMEZONE', 'MAX_UPLOAD_SIZE_MB', 'OPENAI_API_KEY', 'OPENAI_MAX_TOKENS', 'OPENAI_MODEL', 'OPENAI_TEMPERATURE', 'UTC', 'api_key', 'gpt-4', 'max_tokens', 'model', 'temperature']

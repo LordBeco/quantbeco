@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\backtesting_engine\backtest_engine.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.02, 1.0, 10000.0, '1h', 'EURUSD', 'UTC']

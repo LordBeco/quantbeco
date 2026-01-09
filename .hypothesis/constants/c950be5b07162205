@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\backtesting_engine\backtest_engine.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1e-05, 0.02, 1.0, 2.0, 50.0, 10000.0, 100, 252, 1000, '1h', 'EURUSD', 'M', 'UTC', 'buy', 'close', 'compounding', 'datetime', 'drawdown', 'end_of_data', 'entry_price', 'entry_time', 'equity', 'high', 'ignore', 'inf', 'low', 'month', 'open', 'quantity', 'return', 'sell', 'side', 'signal', 'stop_loss', 'take_profit', 'timestamp', 'vectorbt', 'volume', 'year']

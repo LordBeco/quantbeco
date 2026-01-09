@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\backtesting_engine\report_generator.py
+# hypothesis_version: 6.141.1
+
+[-0.7, 0.0, 0.01, 0.1, 0.2, 0.6, 0.7, 0.8, 0.99, 10000.0, 800, 1000000, '%Y-%m-%d %H:%M:%S', 'Buy Entry', 'Buy Exit', 'Close Price', 'Close Time', 'Comment', 'Commission', 'Lots', 'No Data Available', 'Open Price', 'Open Time', 'Price', 'Profit', 'Sell Entry', 'Sell Exit', 'Swaps', 'Symbol', 'Ticket', 'Time', 'Type', 'USD', 'Volume', 'bottom right', 'buy', 'close', 'coerce', 'darkgreen', 'darkred', 'dash', 'date', 'dot', 'green', 'high', 'left', 'lightcoral', 'lightgreen', 'lines', 'low', 'markers', 'open', 'plotly_white', 'red', 'sell', 'skip', 'stop_loss', 'take_profit', 'text', 'top', 'top right', 'triangle-down', 'triangle-up', 'volume']

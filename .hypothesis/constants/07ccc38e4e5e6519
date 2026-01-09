@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\kelly_criterion.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.25, 0.5, 0.7, 1.0, 1.5, 2.0, 100, 1000, 'EXTREME', 'HIGH', 'LOW', 'MODERATE', 'NO EDGE', 'UNDEFINED', 'avg_loss', 'avg_lot_size', 'avg_win', 'base_lot_size', 'conservative_kelly', 'edge', 'equity_used', 'error', 'has_analysis', 'has_lot_data', 'inf', 'kelly_analysis', 'kelly_fraction', 'kelly_fraction_used', 'kelly_multiplier', 'lot_consistency', 'lot_std', 'max_lot', 'min_lot', 'odds_ratio', 'recommendation', 'recommendation_text', 'recommended_lot_size', 'risk_assessment', 'risk_level', 'risk_per_trade_pct', 'rolling_edge', 'rolling_odds_ratio', 'total_trades', 'user_base_rate', 'user_current_lots', 'win_rate']

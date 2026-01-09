@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\backtesting_engine\instrument_manager.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.01, 0.03, 0.04, 0.05, 0.09, 0.1, 0.3, 0.4, 0.5, 1.0, 1.2, 1.5, 1.8, 1.9, 2.0, 2.1, 2.2, 2.5, 2.8, 3.0, 3.2, 3.5, 3.8, 7.0, 7.5, 8.0, 10.0, 12.5, 50.0, 10000.0, 100, 100000, 'AUDCAD', 'AUDUSD', 'BTCUSD', 'ETHUSD', 'EURCHF', 'EURGBP', 'EURJPY', 'EURUSD', 'GBPCHF', 'GBPJPY', 'GBPUSD', 'GER40', 'JPN225', 'LTCUSD', 'NAS100', 'NZDUSD', 'SPX500', 'UK100', 'UKOIL', 'US30', 'USDCAD', 'USDCHF', 'USDJPY', 'USOIL', 'XAGUSD', 'XAUUSD', 'compounding', 'fixed', 'risk_based']

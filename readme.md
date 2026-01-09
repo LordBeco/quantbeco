@@ -199,3 +199,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **⚡ Start analyzing your trading performance like a pro!**
 
 [![Deploy to Streamlit Cloud](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://streamlit.io/cloud)
+ python -m venv venv     
+venv\Scripts\activate   
+streamlit run app.py

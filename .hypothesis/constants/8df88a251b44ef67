@@ -1,0 +1,4 @@
+# file: C:\Users\steve\Desktop\QuantBeco\trade_analyzer_pro\ai_strategy_builder\strategy_prompt_processor.py
+# hypothesis_version: 6.141.1
+
+[1.0, 5000, '<\\s*', '>\\s*', 'Code is empty', 'Max retries exceeded', '\\', '\\.ewm\\s*\\(', '\\.rolling\\s*\\(', '\\s*\\(', 'bollinger', 'bollinger\\s*\\(', 'buy', 'calculate_indicators', 'class ', 'content', 'cross', 'def ', 'ema\\s*\\(', 'entry', 'entry_conditions', 'exit', 'exit_conditions', 'for ', 'generate_signals', 'generated_at', 'if ', 'import ', 'import numpy', 'import pandas', 'indicator', 'indicator_crossover', 'indicators', 'macd', 'macd\\s*\\(', 'model_used', 'moving average', 'moving_average\\s*\\(', 'original_prompt', 'price', "r'", 'risk', 'role', 'rsi', 'rsi\\s*\\(', 'sell', 'signal', 'sma\\s*\\(', 'stop_loss', 'strategy', 'system', 'take_profit', 'trade', 'user', 'while ']
