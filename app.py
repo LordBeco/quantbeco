@@ -32,6 +32,35 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
+# TEMPORARY: Cache clearing for debugging OpenRouter issue
+def add_debug_cache_controls():
+    """Add temporary cache clearing controls for debugging"""
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("**🔧 Debug Controls**")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🧹 Clear Cache", help="Clear all Streamlit cache"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.success("Cache cleared!")
+        
+        with col2:
+            if st.button("🔄 Reset AI", help="Reset AI provider session state"):
+                keys_to_clear = [
+                    'strategy_processor', 
+                    'current_provider', 
+                    'selected_openrouter_model',
+                    'pine_converter'
+                ]
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.success("AI reset!")
+                st.rerun()
+
 def get_date_range(period, custom_start=None, custom_end=None):
     """Get start and end dates for different time periods"""
     today = datetime.now().date()
@@ -321,8 +350,11 @@ def strategy_generator_interface():
             status_text.text("🔧 Initializing AI processor...")
             progress_bar.progress(10)
             
-            # Initialize strategy processor if needed
-            if 'strategy_processor' not in st.session_state:
+            # Initialize strategy processor if needed or if provider changed
+            if ('strategy_processor' not in st.session_state or 
+                'current_provider' not in st.session_state or 
+                st.session_state.current_provider != selected_provider):
+                
                 if selected_provider == 'openrouter' and hasattr(st.session_state, 'selected_openrouter_model'):
                     st.session_state.strategy_processor = StrategyPromptProcessor(
                         provider=selected_provider, 
@@ -330,6 +362,9 @@ def strategy_generator_interface():
                     )
                 else:
                     st.session_state.strategy_processor = StrategyPromptProcessor(provider=selected_provider)
+                
+                # Update current provider
+                st.session_state.current_provider = selected_provider
             
             progress_bar.progress(25)
             status_text.text("📝 Preparing enhanced prompt...")
@@ -459,8 +494,11 @@ def indicators_builder_interface():
                 with st.spinner("🤖 Generating custom indicator..."):
                     try:
                         # Use AI to generate custom indicator
-                        if 'strategy_processor' not in st.session_state:
-                            st.session_state.strategy_processor = StrategyPromptProcessor()
+                        if ('strategy_processor' not in st.session_state or 
+                            'current_provider' not in st.session_state or 
+                            st.session_state.current_provider != 'puter'):  # Default to puter for indicators
+                            st.session_state.strategy_processor = StrategyPromptProcessor(provider='puter')
+                            st.session_state.current_provider = 'puter'
                         
                         indicator_prompt = f"""
                         Create a custom technical indicator with the following specifications:
@@ -7169,6 +7207,9 @@ def main():
     st.markdown(inject_css(), unsafe_allow_html=True)
     st.title("🎯 FundedBeco Trading Performance Intelligence")
     st.markdown("**FundedBeco Strategy Diagnostics Console**")
+    
+    # Add debug controls (temporary for OpenRouter fix)
+    add_debug_cache_controls()
 
     # === TAB NAVIGATION ===
     tab1, tab2, tab3, tab4 = st.tabs([

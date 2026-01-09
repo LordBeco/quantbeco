@@ -34,7 +34,7 @@ class OpenRouterClient:
     
     def __init__(self, api_key: Optional[str] = None, site_url: str = None, site_name: str = None):
         """Initialize OpenRouter client"""
-        self.api_key = api_key
+        self.api_key = api_key or Config.OPENROUTER_API_KEY
         self.site_url = site_url or Config.OPENROUTER_SITE_URL
         self.site_name = site_name or Config.OPENROUTER_SITE_NAME
         self.base_url = "https://openrouter.ai/api/v1"
@@ -59,9 +59,12 @@ class OpenRouterClient:
             "X-Title": self.site_name,
         }
         
-        # Add authorization header if API key is provided
+        # Add authorization header - now required even for free models
         if self.api_key and self.api_key.strip():
             headers["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            # OpenRouter now requires API key even for free models
+            raise ValueError("OpenRouter API key is required. Get one free at https://openrouter.ai/keys")
         
         # Prepare request data
         data = {
@@ -115,7 +118,7 @@ class OpenRouterClientWrapper:
     """Wrapper to make OpenRouterClient compatible with OpenAI client interface"""
     
     def __init__(self, api_key: Optional[str] = None):
-        self.client = OpenRouterClient(api_key=api_key)
+        self.client = OpenRouterClient(api_key=api_key or Config.OPENROUTER_API_KEY)
         
     @property
     def chat(self):
